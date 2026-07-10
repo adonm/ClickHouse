@@ -1,12 +1,11 @@
--- Tags: no-fasttest
--- Tag justification:
---   no-fasttest: depends on libpq and libmysql (PostgreSQL and MySQL database engines),
---     which are not built in fast test.
---   no-parallel: creates PostgreSQL and MySQL databases pointing at an unreachable host.
---     Because `show_remote_databases_in_system_tables` defaults to `true`, these databases
---     are visible in `system.tables`, `system.columns` and `system.completions`, so any
---     concurrent query that scans those tables without a database filter would try to
---     connect to the unreachable host and fail with `POSTGRESQL_CONNECTION_FAILURE`.
+-- Tags: no-fasttest, no-parallel
+-- Tag no-fasttest: depends on libpq and libmysql (PostgreSQL and MySQL database engines),
+--   which are not built in fast test.
+-- Tag no-parallel: creates PostgreSQL and MySQL databases pointing at an unreachable host.
+--   Because `show_remote_databases_in_system_tables` defaults to `true`, these databases
+--   are visible in `system.tables`, `system.columns` and `system.completions`, so any
+--   concurrent query that scans those tables without a database filter would try to
+--   connect to the unreachable host and fail with `POSTGRESQL_CONNECTION_FAILURE`.
 
 SET send_logs_level = 'fatal';
 
