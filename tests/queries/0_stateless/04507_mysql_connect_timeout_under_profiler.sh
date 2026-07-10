@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# Tag justification:
-#   no-fasttest: depends on libmysql (MySQL database engine), not built in fast test.
-#   no-parallel: attaches a MySQL database pointing at an unreachable host; it is visible
-#     in system.tables, so a concurrent unfiltered scan would also try to connect to it.
+# Tags: no-fasttest, no-parallel
+# Tag no-fasttest: depends on libmysql (MySQL database engine), not built in fast test.
+# Tag no-parallel: attaches a MySQL database pointing at an unreachable host; it is visible
+#   in system.tables, so a concurrent unfiltered scan would also try to connect to it.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
