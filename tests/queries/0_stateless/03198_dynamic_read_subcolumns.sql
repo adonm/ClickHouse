@@ -1,4 +1,4 @@
--- Tags: no-random-settings, no-object-storage, no-parallel
+-- Tags: no-random-settings, no-object-storage
 -- no-parallel: Running `DROP MARK CACHE` can have a big impact on other concurrent tests
 -- Tag no-object-storage: this test relies on the number of opened files in MergeTree that can differ in object storages
 
@@ -8,9 +8,9 @@ DROP TABLE IF EXISTS test_dynamic;
 CREATE TABLE test_dynamic (id UInt64, d Dynamic) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
 INSERT INTO test_dynamic VALUES (1, 'foo'), (2, 1111), (3, [1, 2, 3]);
 EXPLAIN QUERY TREE SELECT d.String FROM test_dynamic SETTINGS enable_analyzer = 1;
-SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE FOR TABLE test_dynamic;
 SELECT d.String FROM test_dynamic SETTINGS enable_analyzer = 1;
-SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE FOR TABLE test_dynamic;
 SELECT d.String FROM test_dynamic SETTINGS enable_analyzer = 0;
 SYSTEM FLUSH LOGS query_log;
 SELECT

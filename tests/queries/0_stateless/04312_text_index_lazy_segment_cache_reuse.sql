@@ -1,6 +1,4 @@
--- Tags: no-parallel, no-parallel-replicas
--- no-parallel: uses `SYSTEM CLEAR TEXT INDEX POSTINGS CACHE`, which resets the server-wide
---   cache for every concurrently running query.
+-- Tags: no-parallel-replicas
 -- no-parallel-replicas: parallel replicas split the granule across replicas, so the per-segment
 --   build/cache counts asserted below would no longer be deterministic.
 
@@ -46,7 +44,7 @@ FROM numbers(2048);
 SELECT 'cardinality lazytok', count() FROM tab_seg_cache WHERE hasToken(s, 'lazytok');
 
 -- Start from an empty cache so the first execution is a guaranteed cold miss.
-SYSTEM CLEAR TEXT INDEX POSTINGS CACHE;
+SYSTEM CLEAR TEXT INDEX POSTINGS CACHE FOR TABLE tab_seg_cache;
 
 -- Cold: every segment is a cache miss and gets built once.
 SELECT count() FROM tab_seg_cache WHERE hasToken(s, 'lazytok')
@@ -80,5 +78,5 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
   AND type = 'QueryFinish'
   AND log_comment = '04312_seg_cache_warm';
 
-SYSTEM CLEAR TEXT INDEX POSTINGS CACHE;
+SYSTEM CLEAR TEXT INDEX POSTINGS CACHE FOR TABLE tab_seg_cache;
 DROP TABLE tab_seg_cache;

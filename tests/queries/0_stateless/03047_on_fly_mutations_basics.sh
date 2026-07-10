@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-merge-tree-settings, no-random-settings, no-parallel
+# Tags: no-random-merge-tree-settings, no-random-settings
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,22 +30,22 @@ ALTER TABLE t_lightweight_mut_1 DELETE WHERE v = 'd';
 ALTER TABLE t_lightweight_mut_1 UPDATE v = 'e' WHERE id = 2;
 ALTER TABLE t_lightweight_mut_1 DELETE WHERE v = 'e';
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE FOR TABLE t_lightweight_mut_1;
 SELECT id FROM t_lightweight_mut_1 ORDER BY id;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE FOR TABLE t_lightweight_mut_1;
 SELECT v FROM t_lightweight_mut_1 ORDER BY id;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE FOR TABLE t_lightweight_mut_1;
 SELECT id, v FROM t_lightweight_mut_1 ORDER BY id;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE FOR TABLE t_lightweight_mut_1;
 SELECT id, v, s FROM t_lightweight_mut_1 ORDER BY id;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE FOR TABLE t_lightweight_mut_1;
 SELECT id FROM t_lightweight_mut_1 ORDER BY id SETTINGS apply_mutations_on_fly = 0;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE FOR TABLE t_lightweight_mut_1;
 SELECT id, v FROM t_lightweight_mut_1 ORDER BY id SETTINGS apply_mutations_on_fly = 0;
 
 SYSTEM FLUSH LOGS query_log;

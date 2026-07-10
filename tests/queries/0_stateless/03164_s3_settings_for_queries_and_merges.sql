@@ -1,4 +1,4 @@
--- Tags: no-random-settings, no-fasttest, no-parallel
+-- Tags: no-random-settings, no-fasttest
 
 SET allow_prefetched_read_pool_for_remote_filesystem=0;
 SET allow_prefetched_read_pool_for_local_filesystem=0;
@@ -14,10 +14,10 @@ SETTINGS index_granularity = 512, min_bytes_for_wide_part = '10G', storage_polic
 
 INSERT INTO t_compact_bytes_s3 SELECT number, number, number, number, number FROM numbers(512 * 32 * 40);
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE FOR TABLE t_compact_bytes_s3;
 OPTIMIZE TABLE t_compact_bytes_s3 FINAL;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE FOR TABLE t_compact_bytes_s3;
 SELECT count() FROM t_compact_bytes_s3 WHERE NOT ignore(c2, c4);
 SYSTEM FLUSH LOGS query_log;
 

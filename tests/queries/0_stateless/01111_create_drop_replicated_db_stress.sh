@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, zookeeper, no-parallel, long, no-msan
+# Tags: race, zookeeper, long, no-msan
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=fatal
 

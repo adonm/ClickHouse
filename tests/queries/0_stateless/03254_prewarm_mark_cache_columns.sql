@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings
+-- Tags: no-random-settings, no-random-merge-tree-settings
 
 DROP TABLE IF EXISTS t_prewarm_columns;
 
@@ -10,13 +10,13 @@ INSERT INTO t_prewarm_columns VALUES (1, 1, 1, 1);
 
 SELECT count() FROM t_prewarm_columns WHERE NOT ignore(*);
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE FOR TABLE t_prewarm_columns;
 DETACH TABLE t_prewarm_columns;
 ATTACH TABLE t_prewarm_columns;
 
 SELECT count() FROM t_prewarm_columns WHERE NOT ignore(*);
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE FOR TABLE t_prewarm_columns;
 SYSTEM PREWARM MARK CACHE t_prewarm_columns;
 
 SELECT count() FROM t_prewarm_columns WHERE NOT ignore(*);

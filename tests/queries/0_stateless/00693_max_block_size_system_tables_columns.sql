@@ -1,4 +1,4 @@
--- Tags: no-parallel, memory-engine
+-- Tags: memory-engine
 
 -- NOTE: database = currentDatabase() is not mandatory
 

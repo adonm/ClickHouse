@@ -1,5 +1,3 @@
--- Tags: no-parallel
--- Tag no-parallel: Messes with internal cache
 
 -- Tests that the query condition cache rejects conditions with non-deterministic functions
 
@@ -13,19 +11,19 @@ INSERT INTO tab SELECT number, number FROM numbers(1_000_000); -- 1 mio rows sou
 SELECT '--- with move to PREWHERE';
 SET optimize_move_to_prewhere = true;
 
-SYSTEM CLEAR QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
 
 SELECT 'Query conditions with non-deterministic functions must not be cached.';
 SELECT count(*) FROM tab WHERE b = rand64() SETTINGS use_query_condition_cache = true FORMAT Null;
-SELECT count(*) FROM system.query_condition_cache;
+SELECT count(*) FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
 
 SELECT '--- without move to PREWHERE';
 SET optimize_move_to_prewhere = false;
 
-SYSTEM CLEAR QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
 
 SELECT 'Query conditions with non-deterministic functions must not be cached.';
 SELECT count(*) FROM tab WHERE b = rand64() SETTINGS use_query_condition_cache = true FORMAT Null;
-SELECT count(*) FROM system.query_condition_cache;
+SELECT count(*) FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
 
 DROP TABLE tab;

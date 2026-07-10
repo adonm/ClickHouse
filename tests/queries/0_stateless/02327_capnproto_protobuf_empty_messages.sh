@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-replicated-database, no-ordinary-database
+# Tags: no-fasttest, no-replicated-database, no-ordinary-database
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-touch $USER_FILES_PATH/data.capnp
+touch $CLICKHOUSE_USER_FILES_UNIQUE/data.capnp
 
 SCHEMADIR=${CLICKHOUSE_SCHEMA_FILES}
 CLIENT_SCHEMADIR=$CURDIR/format_schemas

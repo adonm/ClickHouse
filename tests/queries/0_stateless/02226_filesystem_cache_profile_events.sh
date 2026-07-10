@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-object-storage, no-random-settings, no-replicated-database
+# Tags: no-fasttest, no-object-storage, no-random-settings, no-replicated-database
 
 # set -x
 
@@ -92,7 +92,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     TRUNCATE TABLE test_02226;
     SELECT count() FROM test_02226;
 
-    SYSTEM CLEAR FILESYSTEM CACHE;
+    SYSTEM CLEAR FILESYSTEM CACHE '$STORAGE_POLICY';
 
     INSERT INTO test_02226 SELECT * FROM generateRandom('key UInt32, value String') LIMIT 10000;
     """

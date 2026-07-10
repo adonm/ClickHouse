@@ -1,4 +1,3 @@
--- Tags: no-parallel
 -- (databases can be removed in background, so this test should not be run in parallel)
 
 DROP TABLE IF EXISTS t;

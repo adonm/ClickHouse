@@ -1,4 +1,3 @@
--- Tags: no-parallel
 -- ^ creates a user
 
 -- Regression test: reading a materialized view whose target is a Distributed table must not crash

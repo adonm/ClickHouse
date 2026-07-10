@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-replicated-database, no-ordinary-database, no-shared-merge-tree, no-fasttest
+# Tag no-parallel: creates the server-wide `flags/force_drop_table` marker file, which
+# globally bypasses the `max_table_size_to_drop` protection for the *next* oversized DROP
+# on the server (`Context::checkCanBeDropped` deletes the marker on first use) — a
+# concurrent test's oversized drop could consume it before this test's own
+# `CREATE OR REPLACE` does, or vice versa.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

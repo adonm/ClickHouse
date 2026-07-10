@@ -1,5 +1,4 @@
--- Tags: no-random-merge-tree-settings, no-random-settings, no-parallel
--- no-parallel: SYSTEM CLEAR MARK CACHE is used.
+-- Tags: no-random-merge-tree-settings, no-random-settings
 
 DROP TABLE IF EXISTS t_lightweight_mut_5;
 
@@ -17,13 +16,13 @@ SYSTEM STOP MERGES t_lightweight_mut_5;
 INSERT INTO t_lightweight_mut_5 VALUES (1, 'a', 'b');
 ALTER TABLE t_lightweight_mut_5 UPDATE s1 = 'x', s2 = 'y' WHERE id = 1;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE FOR TABLE t_lightweight_mut_5;
 SELECT s1 FROM t_lightweight_mut_5 ORDER BY id;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE FOR TABLE t_lightweight_mut_5;
 SELECT s2 FROM t_lightweight_mut_5 ORDER BY id;
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE FOR TABLE t_lightweight_mut_5;
 SELECT s1, s2 FROM t_lightweight_mut_5 ORDER BY id;
 
 SYSTEM FLUSH LOGS query_log;

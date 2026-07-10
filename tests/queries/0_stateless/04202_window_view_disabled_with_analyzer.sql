@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel, no-replicated-database
+-- Tags: no-fasttest, no-replicated-database
 -- Test: exercises `throwIfWindowViewIsDisabled` paths in `StorageWindowView`
 -- Covers: src/Storages/WindowView/StorageWindowView.cpp
 --   line 1797 — throwIfWindowViewIsDisabled definition (member-flag and per-query setting branch)

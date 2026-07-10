@@ -1,4 +1,5 @@
 -- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings
+-- Tag no-parallel: uses a process-global failpoint
 -- no-parallel -- enables failpoint
 -- no-random-settings -- depend on type of part, should always fail
 drop table if exists prefetched_table;

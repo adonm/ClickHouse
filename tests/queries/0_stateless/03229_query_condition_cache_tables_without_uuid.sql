@@ -1,5 +1,4 @@
--- Tags: no-parallel, no-shared-merge-tree
--- no-parallel: creates own database
+-- Tags: no-shared-merge-tree
 -- no-shared-merge-tree: doesn't support databases without UUID
 
 -- Testcase for https://github.com/ClickHouse/ClickHouse/issues/92863
@@ -25,13 +24,13 @@ SELECT uuid FROM system.parts WHERE database = currentDatabase();
 
 SET use_query_condition_cache = 1;
 
-SYSTEM CLEAR QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
 
-SELECT count(*) from system.query_condition_cache; -- no entry
+SELECT count(*) from system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab')); -- no entry
 
 SELECT count(*) FROM tab WHERE val = 24; -- 1 match
 
-SELECT count(*) from system.query_condition_cache; -- still no entry
+SELECT count(*) from system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab')); -- still no entry
 
 DROP TABLE tab;
 

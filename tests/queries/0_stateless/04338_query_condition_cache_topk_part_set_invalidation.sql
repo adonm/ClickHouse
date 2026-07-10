@@ -1,5 +1,4 @@
--- Tags: long, no-parallel, no-parallel-replicas
--- Tag no-parallel: Messes with internal cache
+-- Tags: long, no-parallel-replicas
 -- Tag long: needs ~1.5M rows across two partitions for the TopK threshold to drop
 --   whole granules of the unchanged part, so on the slower S3 + sanitizer
 --   configuration a single run takes ~180s and crosses the flaky-check "test runs
@@ -74,14 +73,14 @@ SELECT 1,
 FROM numbers(1_000_000)
 SETTINGS max_insert_threads = 1, max_insert_block_size = 2_000_000, min_insert_block_size_rows = 2_000_000;
 
-SYSTEM CLEAR QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
 
 SELECT '--- DESC LIMIT 5 ground truth (QCC off): top rows all come from partition 0';
 SELECT k FROM tab WHERE w = 7 ORDER BY k DESC LIMIT 5 SETTINGS use_query_condition_cache = 0;
 
 SELECT '--- Warm run records partition 1 granules as skippable under the TopK salt';
 SELECT k FROM tab WHERE w = 7 ORDER BY k DESC LIMIT 5;
-SELECT count() > 0 FROM system.query_condition_cache;
+SELECT count() > 0 FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
 
 SELECT '--- Cached run, same part set: must match ground truth';
 SELECT k FROM tab WHERE w = 7 ORDER BY k DESC LIMIT 5;

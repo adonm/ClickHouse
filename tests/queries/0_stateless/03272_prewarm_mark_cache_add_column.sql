@@ -1,5 +1,3 @@
--- Tags: no-parallel
--- no-parallel: SYSTEM CLEAR MARK CACHE is used.
 
 DROP TABLE IF EXISTS t_prewarm_add_column;
 
@@ -8,7 +6,7 @@ ENGINE = MergeTree ORDER BY a
 SETTINGS prewarm_mark_cache = 1, min_bytes_for_wide_part = 0;
 
 -- Drop mark cache because it may be full and we will fail to add new entries to it.
-SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE FOR TABLE t_prewarm_add_column;
 SYSTEM STOP MERGES t_prewarm_add_column;
 
 INSERT INTO t_prewarm_add_column VALUES (1);

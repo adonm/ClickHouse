@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- Tag no-parallel: uses a process-global failpoint
 
 SET allow_statistics = 1;
 SET materialize_statistics_on_insert = 1;

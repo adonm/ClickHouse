@@ -1,5 +1,4 @@
--- Tags: no-parallel, no-parallel-replicas
--- Tag no-parallel: Messes with internal cache
+-- Tags: no-parallel-replicas
 --
 -- Correctness regression for the Query Condition Cache (QCC) on the
 -- `ORDER BY <column> LIMIT n` (TopK) plan. The companion test
@@ -70,17 +69,17 @@ SETTINGS index_granularity = 64,
 INSERT INTO tab SELECT rand(), number, number % 1000 FROM numbers(1_000_000)
 SETTINGS max_insert_threads = 1, max_insert_block_size = 2_000_000, min_insert_block_size_rows = 2_000_000;
 
-SYSTEM CLEAR QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
 
 SELECT '--- QCC starts empty';
-SELECT count() FROM system.query_condition_cache;
+SELECT count() FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
 
 SELECT '--- ASC LIMIT 5: ground truth (QCC off)';
 SELECT k FROM tab WHERE w = 7 ORDER BY k ASC LIMIT 5 SETTINGS use_query_condition_cache = 0;
 
 SELECT '--- ASC LIMIT 5: first run writes a QCC entry under the active TopK filter';
 SELECT k FROM tab WHERE w = 7 ORDER BY k ASC LIMIT 5;
-SELECT count() > 0 FROM system.query_condition_cache;
+SELECT count() > 0 FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
 
 SELECT '--- ASC LIMIT 5: second run reads cached granule decisions, must match ground truth';
 SELECT k FROM tab WHERE w = 7 ORDER BY k ASC LIMIT 5;

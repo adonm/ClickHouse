@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, memory-engine
+# Tags: no-fasttest, memory-engine
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-DATA_FILE=$USER_FILES_PATH/data_02293
+DATA_FILE=$CLICKHOUSE_USER_FILES_UNIQUE/data_02293
 
 $CLICKHOUSE_CLIENT -q "drop table if exists test_02293" 
 $CLICKHOUSE_CLIENT -q "create table test_02293 (a UInt32, b String, c Array(Tuple(Array(UInt32), String))) engine=Memory"

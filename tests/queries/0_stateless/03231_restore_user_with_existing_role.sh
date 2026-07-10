@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 # Disabled parallel since RESTORE can only restore either all users or no users
 # (it can't restore only users added by the current test run),

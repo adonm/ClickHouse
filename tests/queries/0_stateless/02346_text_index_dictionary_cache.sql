@@ -1,5 +1,4 @@
--- Tags: no-parallel, no-parallel-replicas
--- no-parallel: looks at server-wide metrics
+-- Tags: no-parallel-replicas
 
 --- These tests verify the caching of deserialized text index token infos in consecutive executions.
 --- The tokens cache caches individual token infos (not entire dictionary blocks).
@@ -67,7 +66,7 @@ SELECT * FROM text_index_cache_stats(filter = 'text_127');
 
 SELECT 'Clear text index tokens cache';
 
-SYSTEM CLEAR TEXT INDEX TOKENS CACHE;
+SYSTEM CLEAR TEXT INDEX TOKENS CACHE FOR TABLE tab;
 
 SELECT '--- cache miss after clearing cache.';
 SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_125');
@@ -87,5 +86,5 @@ SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_125');
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_125');
 
-SYSTEM CLEAR TEXT INDEX TOKENS CACHE;
+SYSTEM CLEAR TEXT INDEX TOKENS CACHE FOR TABLE tab;
 DROP TABLE tab;

@@ -1,5 +1,4 @@
--- Tags: long, no-parallel, no-parallel-replicas
--- Tag no-parallel: Messes with internal cache
+-- Tags: long, no-parallel-replicas
 -- Tag long: needs ~1M rows for the QCC to populate (a granule-spanning chunk must be
 --   fully filtered before the LIMIT cancels the pipeline), so on the slower S3 +
 --   sanitizer configuration a single run takes ~180s and crosses the flaky-check
@@ -42,26 +41,26 @@ SETTINGS index_granularity = 64,
 INSERT INTO tab SELECT rand(), number, number FROM numbers(1_000_000);
 
 SELECT '--- QCC starts empty';
-SYSTEM CLEAR QUERY CONDITION CACHE;
-SELECT count() FROM system.query_condition_cache;
+SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
+SELECT count() FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
 
 SELECT '--- Same TopK plan re-runs reuse the same QCC entry';
 SELECT v1 FROM tab WHERE v2 = 10000 ORDER BY v1 ASC LIMIT 5 FORMAT Null;
-SELECT count() FROM system.query_condition_cache;
+SELECT count() FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
 SELECT v1 FROM tab WHERE v2 = 10000 ORDER BY v1 ASC LIMIT 5 FORMAT Null;
-SELECT count() FROM system.query_condition_cache;
+SELECT count() FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
 
 SELECT '--- Different LIMIT writes a separate entry';
 SELECT v1 FROM tab WHERE v2 = 10000 ORDER BY v1 ASC LIMIT 7 FORMAT Null;
-SELECT count() FROM system.query_condition_cache;
+SELECT count() FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
 
 SELECT '--- Different sort direction writes a separate entry';
 SELECT v1 FROM tab WHERE v2 = 10000 ORDER BY v1 DESC LIMIT 5 FORMAT Null;
-SELECT count() FROM system.query_condition_cache;
+SELECT count() FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
 
 SELECT '--- Different sort column writes a separate entry';
 SELECT v2 FROM tab WHERE v2 = 10000 ORDER BY v2 ASC LIMIT 5 FORMAT Null;
-SELECT count() FROM system.query_condition_cache;
+SELECT count() FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
 
 DROP TABLE tab;
 
@@ -80,17 +79,17 @@ INSERT INTO tab2
 SELECT rand(), if(number % 2 = 0, number, NULL), number
 FROM numbers(1_000_000);
 
-SYSTEM CLEAR QUERY CONDITION CACHE;
-SELECT count() FROM system.query_condition_cache;
+SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab2;
+SELECT count() FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
 
 SELECT '--- Same NULLS direction re-runs reuse the same QCC entry';
 SELECT n FROM tab2 WHERE v = 10000 ORDER BY n ASC NULLS FIRST LIMIT 5 FORMAT Null;
-SELECT count() FROM system.query_condition_cache;
+SELECT count() FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
 SELECT n FROM tab2 WHERE v = 10000 ORDER BY n ASC NULLS FIRST LIMIT 5 FORMAT Null;
-SELECT count() FROM system.query_condition_cache;
+SELECT count() FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
 
 SELECT '--- Different NULLS direction writes a separate entry';
 SELECT n FROM tab2 WHERE v = 10000 ORDER BY n ASC NULLS LAST LIMIT 5 FORMAT Null;
-SELECT count() FROM system.query_condition_cache;
+SELECT count() FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
 
 DROP TABLE tab2;

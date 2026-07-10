@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: stateful, no-flaky-check, no-parallel, no-random-settings, long, no-asan
+# Tags: stateful, no-flaky-check, no-parallel:filesystem-cache, no-random-settings, long, no-asan
+# Tag no-parallel: serializes tests that mutate or assert the shared `filesystem-cache` resource
+# (this test issues `SYSTEM CLEAR FILESYSTEM CACHE`, which is process-wide, and its assertion that
+#  `hits_s3_sampled` stays fully resident in cache would be perturbed by concurrent cache users)
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

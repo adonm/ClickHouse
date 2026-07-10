@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-replicated-database
+# Tags: no-fasttest, no-replicated-database
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-cp $CURDIR/data_mysql_dump/dump*.sql $USER_FILES_PATH
+cp $CURDIR/data_mysql_dump/dump*.sql $CLICKHOUSE_USER_FILES_UNIQUE
 
 $CLICKHOUSE_CLIENT -q "select * from file(dump1.sql, MySQLDump, 'x Nullable(Int32), y Nullable(Int32)') order by x, y"
 $CLICKHOUSE_CLIENT -q "select * from file(dump1.sql, MySQLDump, 'a Nullable(Int32), b Nullable(Int32)') order by a, b settings input_format_mysql_dump_map_column_names = 0"
@@ -143,4 +143,4 @@ $CLICKHOUSE_CLIENT -q "select * from file(dump15.sql, MySQLDump) settings input_
 $CLICKHOUSE_CLIENT -q "desc file(dump15.sql, MySQLDump) settings input_format_mysql_dump_table_name='test 3'"
 $CLICKHOUSE_CLIENT -q "select * from file(dump15.sql, MySQLDump) settings input_format_mysql_dump_table_name='test 3', max_threads=1"
 
-rm $USER_FILES_PATH/dump*.sql
+rm $CLICKHOUSE_USER_FILES_UNIQUE/dump*.sql

@@ -1,4 +1,4 @@
--- Tags: no-object-storage, no-random-merge-tree-settings, no-parallel
+-- Tags: no-object-storage, no-random-merge-tree-settings
 -- no-s3 because read FileOpen metric
 DROP TABLE IF EXISTS nested;
 
@@ -32,7 +32,7 @@ SELECT col3.n1, col3.n2, col3.n1.a, col3.n1.b, col3.n2.s, col3.n2.t FROM nested;
 
 SELECT 'read files';
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE FOR TABLE nested;
 SELECT col1.a FROM nested FORMAT Null;
 
 -- 4 files: (col1.size0, col1.a) x2
@@ -42,7 +42,7 @@ FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT col1.a FROM %nested%'))
     AND event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase();
 
-SYSTEM CLEAR MARK CACHE;
+SYSTEM CLEAR MARK CACHE FOR TABLE nested;
 SELECT col3.n2.s FROM nested FORMAT Null;
 
 -- 8 files: (col3.size0, col3.n2.size1, col3.n2.s, col3.n2.s.size) x2

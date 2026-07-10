@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel
+-- Tags: no-fasttest
 
 DROP USER IF EXISTS test_user_03593;
 DROP USER IF EXISTS test_user_03593_1;

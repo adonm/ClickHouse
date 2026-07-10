@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-flaky-check, shard
+-- Tags: no-flaky-check, shard
 
 -- Tests the `skip_unavailable_shards_mode` setting on the INSERT path.
 -- The underlying table exists only on shard_0; it is missing on shard_1.

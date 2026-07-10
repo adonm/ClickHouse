@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas, no-parallel
+-- Tags: no-parallel-replicas
 
 -- Tests correctness and profile events of SYSTEM CLEAR TEXT INDEX CACHES
 
@@ -29,7 +29,7 @@ SELECT count() FROM tab WHERE s LIKE '%888%' SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE hasAnyTokens(s, '888');
 SELECT count() FROM tab WHERE hasAnyTokens(s, '888');
 
-SYSTEM CLEAR TEXT INDEX CACHES;
+SYSTEM CLEAR TEXT INDEX CACHES FOR TABLE tab;
 
 SELECT count() FROM tab WHERE hasAnyTokens(s, '888');
 SELECT count() FROM tab WHERE hasAnyTokens(s, '888');

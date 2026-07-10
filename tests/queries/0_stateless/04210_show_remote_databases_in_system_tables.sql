@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel
+-- Tags: no-fasttest
 -- Tag justification:
 --   no-fasttest: depends on libpq and libmysql (PostgreSQL and MySQL database engines),
 --     which are not built in fast test.

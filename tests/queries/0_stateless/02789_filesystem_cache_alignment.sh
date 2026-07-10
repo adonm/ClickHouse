@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-random-settings, no-random-merge-tree-settings, no-flaky-check
+# Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings, no-flaky-check
 # no-flaky-check: the test is long and timeouts because of thread-fuzzer
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -26,7 +26,7 @@ QUERY_ID=$RANDOM
 $CLICKHOUSE_CLIENT --query_id "$QUERY_ID" -m -q "
 SET enable_filesystem_cache_log = 1;
 SET read_through_distributed_cache=0;
-SYSTEM CLEAR FILESYSTEM CACHE;
+SYSTEM CLEAR FILESYSTEM CACHE '$CLICKHOUSE_TEST_UNIQUE_NAME';
 SELECT * FROM test WHERE NOT ignore() LIMIT 1 FORMAT Null;
 SYSTEM FLUSH LOGS filesystem_cache_log;
 "

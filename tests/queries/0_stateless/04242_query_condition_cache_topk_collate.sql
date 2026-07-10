@@ -1,5 +1,4 @@
--- Tags: no-parallel, no-parallel-replicas, no-fasttest
--- Tag no-parallel: Messes with internal cache.
+-- Tags: no-parallel-replicas, no-fasttest
 -- Tag no-fasttest: COLLATE requires ICU, which is not available in the Fast test build.
 --
 -- Companion to `04217_query_condition_cache_topk.sql`: verify that the QCC key
@@ -30,17 +29,17 @@ INSERT INTO tab
 SELECT rand(), toString(number), number
 FROM numbers(1_000_000);
 
-SYSTEM CLEAR QUERY CONDITION CACHE;
-SELECT count() FROM system.query_condition_cache;
+SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
+SELECT count() FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
 
 SELECT '--- Same COLLATE locale re-runs reuse the same QCC entry';
 SELECT s FROM tab WHERE v = 10000 ORDER BY s ASC COLLATE 'en_US' LIMIT 5 FORMAT Null;
-SELECT count() FROM system.query_condition_cache;
+SELECT count() FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
 SELECT s FROM tab WHERE v = 10000 ORDER BY s ASC COLLATE 'en_US' LIMIT 5 FORMAT Null;
-SELECT count() FROM system.query_condition_cache;
+SELECT count() FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
 
 SELECT '--- Different COLLATE locale writes a separate entry';
 SELECT s FROM tab WHERE v = 10000 ORDER BY s ASC COLLATE 'fr' LIMIT 5 FORMAT Null;
-SELECT count() FROM system.query_condition_cache;
+SELECT count() FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
 
 DROP TABLE tab;

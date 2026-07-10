@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
 FILE_NAME=test_02245.parquet
-DATA_FILE=$USER_FILES_PATH/$FILE_NAME
+DATA_FILE=$CLICKHOUSE_USER_FILES_UNIQUE/$FILE_NAME
 
 cp $CUR_DIR/data_parquet_bad_column/metadata_0.parquet $DATA_FILE
 

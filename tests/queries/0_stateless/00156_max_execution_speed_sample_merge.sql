@@ -1,4 +1,5 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel
+-- Tag no-parallel: asserts wall-clock or resource-sensitive behavior
 -- This test validates that max_execution_speed & timeout_before_checking_execution_speed works with:
 --      a) regular query
 --      b) merge query

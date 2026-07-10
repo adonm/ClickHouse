@@ -1,20 +1,27 @@
--- Tags: no-parallel
-SET system_events_show_zero_values = 1;
+-- `OverflowBreak`/`OverflowThrow`/`OverflowAny` are ProfileEvents, so attribute them to each
+-- triggering query via query_log instead of the process-wide system.events counter. This is
+-- immune to concurrent queries elsewhere triggering the same overflow modes.
 
-CREATE TEMPORARY TABLE t (x UInt64);
-INSERT INTO t SELECT value FROM system.events WHERE event = 'OverflowBreak';
 SELECT count() FROM system.numbers FORMAT Null SETTINGS max_rows_to_read = 1, read_overflow_mode = 'break';
-INSERT INTO t SELECT value FROM system.events WHERE event = 'OverflowBreak';
-SELECT max(x) - min(x) FROM t;
 
-TRUNCATE TABLE t;
-INSERT INTO t SELECT value FROM system.events WHERE event = 'OverflowThrow';
+SYSTEM FLUSH LOGS query_log;
+
+SELECT ProfileEvents['OverflowBreak'] FROM system.query_log
+WHERE current_database = currentDatabase() AND type != 'QueryStart'
+    AND query LIKE 'SELECT count() FROM system.numbers FORMAT Null SETTINGS%break%';
+
 SELECT count() FROM system.numbers SETTINGS max_rows_to_read = 1, read_overflow_mode = 'throw'; -- { serverError TOO_MANY_ROWS }
-INSERT INTO t SELECT value FROM system.events WHERE event = 'OverflowThrow';
-SELECT max(x) - min(x) FROM t;
 
-TRUNCATE TABLE t;
-INSERT INTO t SELECT value FROM system.events WHERE event = 'OverflowAny';
+SYSTEM FLUSH LOGS query_log;
+
+SELECT ProfileEvents['OverflowThrow'] FROM system.query_log
+WHERE current_database = currentDatabase() AND type != 'QueryStart'
+    AND query LIKE 'SELECT count() FROM system.numbers SETTINGS%throw%';
+
 SELECT number, count() FROM numbers(100000) GROUP BY number FORMAT Null SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'any';
-INSERT INTO t SELECT value FROM system.events WHERE event = 'OverflowAny';
-SELECT max(x) - min(x) FROM t;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT ProfileEvents['OverflowAny'] FROM system.query_log
+WHERE current_database = currentDatabase() AND type != 'QueryStart'
+    AND query LIKE 'SELECT number, count() FROM numbers(100000)%';

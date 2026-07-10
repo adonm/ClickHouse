@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 # Tag justification:
 #   no-fasttest: depends on libmysql (MySQL database engine), not built in fast test.
 #   no-parallel: attaches a MySQL database pointing at an unreachable host; it is visible

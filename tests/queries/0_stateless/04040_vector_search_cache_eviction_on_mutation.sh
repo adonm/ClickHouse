@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-ordinary-database, no-parallel, no-random-settings
-# no-parallel: checks server-wide VectorSimilarityIndexCacheBytes metric
+# Tags: no-fasttest, no-ordinary-database, no-random-settings, no-parallel:misc-caches
+# Tag no-parallel: serializes tests that mutate or assert the shared `misc-caches` resource
+# (this test asserts the process-wide `VectorSimilarityIndexCacheBytes` metric is exactly 0 right
+# after a global `SYSTEM DROP VECTOR SIMILARITY INDEX CACHE`, which has no per-table filter)
 # no-random-settings: old_parts_lifetime = 0 must not be overridden
 
 # Regression test: verify that VectorSimilarityIndexCache entries are evicted

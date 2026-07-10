@@ -1,5 +1,4 @@
--- Tags: no-parallel, long
--- Tag no-parallel: Messes with internal cache
+-- Tags: long
 
 -- Test that distributed index analysis does not poison the query condition cache.
 --
@@ -47,7 +46,7 @@ SELECT count() FROM t_dia_qcc WHERE value > 300000 AND value < 700000
     SETTINGS use_query_condition_cache = 1, distributed_index_analysis = 0;
 
 -- Confirm cache is populated.
-SELECT count() > 0 AS cache_populated FROM system.query_condition_cache;
+SELECT count() > 0 AS cache_populated FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('t_dia_qcc'));
 
 -- Step 2: Run the same query with distributed index analysis enabled.
 -- This triggers the bug: the diff computation between `res_parts` (sorted) and

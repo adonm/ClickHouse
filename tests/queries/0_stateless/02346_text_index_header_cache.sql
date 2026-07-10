@@ -1,5 +1,4 @@
--- Tags: no-parallel, no-parallel-replicas
--- no-parallel: looks at server-wide metrics
+-- Tags: no-parallel-replicas
 
 --- These tests verify the caching of a deserialized text index header in the consecutive executions.
 
@@ -56,7 +55,7 @@ SELECT * FROM text_index_cache_stats(filter = 'text_511');
 
 SELECT 'Clear text index header cache';
 
-SYSTEM CLEAR TEXT INDEX HEADER CACHE;
+SYSTEM CLEAR TEXT INDEX HEADER CACHE FOR TABLE tab;
 
 SELECT '--- cache miss on the first run.';
 SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_001');
@@ -70,6 +69,6 @@ SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_510');
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_510');
 
-SYSTEM CLEAR TEXT INDEX HEADER CACHE;
+SYSTEM CLEAR TEXT INDEX HEADER CACHE FOR TABLE tab;
 DROP VIEW text_index_cache_stats;
 DROP TABLE tab;

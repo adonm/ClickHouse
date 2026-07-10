@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: atomic-database, memory-engine, no-parallel
+# Tags: atomic-database, memory-engine
 # The test uses `SYSTEM PAUSE VIEWS` and `SYSTEM START VIEWS` which affect all
 # refreshable views on the server, so it must not run concurrently with other
 # tests that create refreshable materialized views.

@@ -1,4 +1,5 @@
--- Tags: no-fasttest, no-parallel, no-msan, no-random-settings
+-- Tags: no-fasttest, no-msan, no-random-settings, no-parallel:misc-caches
+-- Tag no-parallel: serializes tests that mutate or assert the shared `misc-caches` resource
 -- JIT CompileFunction counts are sensitive to randomized optimizer/compiler settings
 
 SET compile_expressions = 1;

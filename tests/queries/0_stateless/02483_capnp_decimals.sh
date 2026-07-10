@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-touch $CLICKHOUSE_USER_FILES/data.capnp
+touch $CLICKHOUSE_USER_FILES_UNIQUE/data.capnp
 
 CLIENT_SCHEMADIR=$CURDIR/format_schemas
 SERVER_SCHEMADIR=test_02483
@@ -17,5 +17,5 @@ $CLICKHOUSE_CLIENT -q "insert into function file(02483_data.capnp, auto, 'decima
 $CLICKHOUSE_CLIENT -q "select * from file(02483_data.capnp) settings format_schema='$SERVER_SCHEMADIR/02483_decimals.capnp:Message'"
 $CLICKHOUSE_CLIENT -q "select * from file(02483_data.capnp, auto, 'decimal64 Decimal64(6), decimal32 Decimal32(3)') settings format_schema='$SERVER_SCHEMADIR/02483_decimals.capnp:Message'"
 
-rm $CLICKHOUSE_USER_FILES/data.capnp
-rm $CLICKHOUSE_USER_FILES/02483_data.capnp
+rm $CLICKHOUSE_USER_FILES_UNIQUE/data.capnp
+rm $CLICKHOUSE_USER_FILES_UNIQUE/02483_data.capnp

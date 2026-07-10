@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
-# Tag no-parallel: Messes with internal cache
+# Tags: no-fasttest
 #     no-fasttest: Produces wrong results in fasttest, unclear why, didn't reproduce locally.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --query_cache_tag $CLICKHOUSE_TEST_UNIQUE_NAME"
 
 # Start with empty query cache (QC).
 ${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR QUERY CACHE"

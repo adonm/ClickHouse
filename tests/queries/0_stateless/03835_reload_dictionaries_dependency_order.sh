@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-fasttest, no-parallel:xml-entities
+# Tag no-parallel: serializes tests that mutate or assert the shared `xml-entities` resource
 
 # Verify that SYSTEM RELOAD DICTIONARIES reloads dictionaries in topological order,
 # so that dictionaries sourcing from other dictionaries see fresh data.

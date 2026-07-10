@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-flaky-check, shard
+-- Tags: no-flaky-check, shard
 
 -- Tests that `skip_unavailable_shards` / `skip_unavailable_shards_mode` set at the `Distributed`
 -- engine level apply to SELECT queries when the query-level settings were not explicitly changed.

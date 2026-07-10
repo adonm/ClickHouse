@@ -1,5 +1,4 @@
--- Tags: no-parallel, no-parallel-replicas
--- no-parallel: looks at server-wide metrics
+-- Tags: no-parallel-replicas
 
 --- These tests verify the caching of a deserialized text index posting lists in the consecutive executions.
 
@@ -64,7 +63,7 @@ SELECT * FROM text_index_cache_stats(filter = 'text_pl_2');
 
 SELECT 'Clear text index postings cache';
 
-SYSTEM CLEAR TEXT INDEX POSTINGS CACHE;
+SYSTEM CLEAR TEXT INDEX POSTINGS CACHE FOR TABLE tab;
 
 SELECT '--- cache miss on the first token.';
 SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_pl_1');
@@ -78,6 +77,6 @@ SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_pl_1');
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_pl_1');
 
-SYSTEM CLEAR TEXT INDEX POSTINGS CACHE;
+SYSTEM CLEAR TEXT INDEX POSTINGS CACHE FOR TABLE tab;
 DROP VIEW text_index_cache_stats;
 DROP TABLE tab;

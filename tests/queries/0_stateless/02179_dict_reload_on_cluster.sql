@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-flaky-check
+-- Tags: no-flaky-check, no-parallel:xml-entities
+-- Tag no-parallel: serializes tests that mutate or assert the shared `xml-entities` resource
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest, long
-# Tag no-parallel: Messes with internal cache
+# Tags: no-fasttest, long
 #     no-fasttest: Produces wrong results in fasttest, unclear why, didn't reproduce locally.
 #     long: Sloooow ...
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --query_cache_tag $CLICKHOUSE_TEST_UNIQUE_NAME"
 
 # -- Attack 1:
 #    - create a user,
@@ -30,7 +30,7 @@ ${CLICKHOUSE_CLIENT} --query "GRANT CURRENT GRANTS ON *.* TO admin WITH GRANT OP
 ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT 0 == $rnd SETTINGS use_query_cache = 1"
 
 # Check that the system view knows the new cache entry
-${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT 'system.query_cache with old user', count(*) FROM system.query_cache"
+${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT 'system.query_cache with old user', count(*) FROM (SELECT * FROM system.query_cache WHERE tag = '$CLICKHOUSE_TEST_UNIQUE_NAME') AS test_query_cache"
 
 # Run query again. The 1st run must be a cache miss, the 2nd run a cache hit
 ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT 0 == $rnd SETTINGS use_query_cache = 1"
@@ -42,7 +42,7 @@ ${CLICKHOUSE_CLIENT} --query "CREATE USER admin"
 ${CLICKHOUSE_CLIENT} --query "GRANT CURRENT GRANTS ON *.* TO admin WITH GRANT OPTION"
 
 # system.query_cache reports the old entry. That is okay since the system table only shows the query string, not the query result.
-${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT 'system.query_cache with new user', count(*) FROM system.query_cache"
+${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT 'system.query_cache with new user', count(*) FROM (SELECT * FROM system.query_cache WHERE tag = '$CLICKHOUSE_TEST_UNIQUE_NAME') AS test_query_cache"
 
 # Run same query as old user. Expect a cache miss.
 ${CLICKHOUSE_CLIENT} --user "admin" --query "SELECT 0 == $rnd SETTINGS use_query_cache = 1"

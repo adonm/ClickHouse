@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 -- Case 1: RENAME DATABASE
 

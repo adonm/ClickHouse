@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-touch $USER_FILES_PATH/data.capnp
+touch $CLICKHOUSE_USER_FILES_UNIQUE/data.capnp
 
 SCHEMADIR=${CLICKHOUSE_SCHEMA_FILES}
 CLIENT_SCHEMADIR=$CURDIR/format_schemas
@@ -20,5 +20,5 @@ $CLICKHOUSE_CLIENT -q "select * from file(02482_data.capnp, auto, 'nested Nested
 $CLICKHOUSE_CLIENT -q "select * from file(02482_data.capnp, auto, '\`nested.x\` Array(Int64), \`nested.y\` Array(Int64)') settings format_schema='$SERVER_SCHEMADIR/02482_list_of_structs.capnp:Nested'"
 $CLICKHOUSE_CLIENT -q "select * from file(02482_data.capnp, auto, '\`nested.x\` Array(Int64)') settings format_schema='$SERVER_SCHEMADIR/02482_list_of_structs.capnp:Nested'"
 
-rm $USER_FILES_PATH/data.capnp
-rm $USER_FILES_PATH/02482_data.capnp
+rm $CLICKHOUSE_USER_FILES_UNIQUE/data.capnp
+rm $CLICKHOUSE_USER_FILES_UNIQUE/02482_data.capnp

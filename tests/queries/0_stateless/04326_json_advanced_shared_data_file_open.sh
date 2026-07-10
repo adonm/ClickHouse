@@ -49,7 +49,7 @@ ${CLICKHOUSE_CLIENT} -q "
 EXPECTED_MARKS=$((NUM_BUCKETS + 4))
 
 # Clear mark cache and run SELECT json with prefetch enabled, counting MarkCacheMisses.
-${CLICKHOUSE_CLIENT} -q "SYSTEM CLEAR MARK CACHE"
+${CLICKHOUSE_CLIENT} -q "SYSTEM CLEAR MARK CACHE FOR TABLE ${TABLE_NAME}"
 
 QUERY_ID=$(${CLICKHOUSE_CLIENT} -q "SELECT lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
 

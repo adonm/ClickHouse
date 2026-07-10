@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel:metadata-caches
+# Tag no-parallel: serializes tests that mutate or assert the shared `metadata-caches` resource
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option).
 # - no-parallel: the repro deliberately relies on a warmed entry in the
 #   server-global Iceberg metadata files cache surviving between the warm-up

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-shared-merge-tree, no-msan, no-azure-blob-storage
+# Tags: long, no-shared-merge-tree, no-msan, no-azure-blob-storage
 # no-azure-blob-storage: this concurrent replication-chaos test exceeds the test framework
 #   timeout reliably on slow Azure blob storage, the same reason as for sibling test
 #   `01169_alter_partition_isolation_stress.sh`. Coverage is still provided by other

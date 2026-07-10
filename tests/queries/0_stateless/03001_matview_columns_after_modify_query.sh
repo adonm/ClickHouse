@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-shared-catalog, no-parallel
+# Tags: no-replicated-database, no-shared-catalog, no-parallel:metadata-caches
+# Tag no-parallel: serializes tests that mutate or assert the shared `metadata-caches` resource
 # Tag no-replicated-database -- modify on-disk metadata that may lead to "Digest does not match" in case Replicated database
 # Tag no-shared-catalog -- same
 

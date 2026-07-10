@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-encrypted-storage, no-replicated-database, no-parallel, no-shared-merge-tree, no-object-storage, no-flaky-check
+# Tags: no-ordinary-database, no-encrypted-storage, no-replicated-database, no-shared-merge-tree, no-object-storage, no-flaky-check
 # no-object-storage: the test writes raw text into `txn_version.txt.tmp` on the part's
 #   directory to simulate an incomplete atomic write on a local filesystem. On object
 #   storage disks every file is wrapped in `DiskObjectStorageMetadata`; reading the bogus

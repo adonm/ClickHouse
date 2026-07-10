@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,7 +12,7 @@ $CLICKHOUSE_CLIENT -q "create table test engine=File(JSONEachRow, 'data.jsonl')"
 $CLICKHOUSE_CLIENT -q "show create table test"
 $CLICKHOUSE_CLIENT -q "detach table test"
 
-rm $USER_FILES_PATH/data.jsonl
+rm $CLICKHOUSE_USER_FILES_UNIQUE/data.jsonl
 
 $CLICKHOUSE_CLIENT -q "attach table test"
 $CLICKHOUSE_CLIENT -q "select * from test" 2>&1 | grep -q "FILE_DOESNT_EXIST" && echo "OK" || echo "FAIL"

@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest, no-random-settings
+-- Tags: no-fasttest, no-random-settings
 
 SET max_bytes_in_join = 0;
 SET max_rows_in_join = 0;

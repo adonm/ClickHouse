@@ -1,5 +1,4 @@
--- Tags: no-parallel, no-parallel-replicas
--- Tag no-parallel: Messes with internal cache
+-- Tags: no-parallel-replicas
 
 -- Does additional QCC lookups that the test doesn't expect
 SET automatic_parallel_replicas_mode = 0, enable_parallel_replicas = 0;
@@ -23,7 +22,6 @@ SET query_plan_optimize_prewhere = 1;
 -- written to the cache as unmatched. On the second run only mark 1 is selected
 -- (SelectedMarks = 1).
 
-SYSTEM CLEAR QUERY CONDITION CACHE;
 
 DROP TABLE IF EXISTS tab;
 

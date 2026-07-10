@@ -1,5 +1,4 @@
--- Tags: no-parallel, no-parallel-replicas
--- Tag no-parallel: Messes with internal cache
+-- Tags: no-parallel-replicas
 -- add_minmax_index_for_numeric_columns=0: Would use the index instead (used before the QueryConditionCache)
 
 -- Does additional QCC lookups that the test doesn't expect
@@ -16,7 +15,6 @@ SET query_plan_optimize_prewhere = 1;
 
 SELECT '--- with move to PREWHERE';
 
-SYSTEM CLEAR QUERY CONDITION CACHE;
 
 DROP TABLE IF EXISTS tab;
 
@@ -55,7 +53,7 @@ ORDER BY
 
 SELECT '--- without move to PREWHERE';
 
-SYSTEM CLEAR QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
 
 SELECT count(*) FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;
 

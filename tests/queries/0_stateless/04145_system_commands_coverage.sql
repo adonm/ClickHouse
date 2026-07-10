@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-parallel:xml-entities
+-- Tag no-parallel: serializes tests that mutate or assert the shared `xml-entities` resource
 -- no-parallel: SYSTEM SYNC FILE CACHE performs a host-wide sync() syscall that
 -- flushes all dirty filesystem buffers; running it alongside other tests slows
 -- it down unboundedly and stalls the concurrent tests, risking timeouts.
