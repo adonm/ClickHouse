@@ -185,16 +185,35 @@ done
 
 find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' | xargs grep --with-filename -i -E -e 'system\s*flush\s*logs\s*(;|$|")' && echo "Please use SYSTEM FLUSH LOGS log_name over global SYSTEM FLUSH LOGS"
 
-# Tests with SYSTEM DROP should have no-parallel tag, because SYSTEM DROP commands
-# (like SYSTEM DROP ... CACHE, SYSTEM DROP REPLICA, etc.) affect server-wide shared state
-# and interfere with other tests running concurrently.
-tests_with_system_drop=( $(
+# Unscoped cache clears affect every test sharing the server. Scoped forms such as
+# `FOR TABLE`, query-cache `TAG`, and named filesystem caches are parallel-safe.
+tests_with_global_cache_drop=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
-        xargs grep -liP 'system\s+drop' |
+        xargs grep -liP '^(?!\s*(?:--|#|EXPLAIN\s+SYNTAX|\$CLICKHOUSE_LOCAL\b)).*system\s+(?:clear|drop)\s+(?:(?:mark|primary\s+index|uncompressed|index\s+mark|index\s+uncompressed|vector\s+similarity\s+index|text\s+index(?:\s+(?:tokens|header|postings))?|query\s+condition|compiled\s+expression|parquet\s+metadata|iceberg\s+metadata|page)\s+cache|text\s+index\s+caches)(?![^;\n]*(?:for\s+table|for\s+source|\btag\b))' |
         sort -u
 ) )
-for test_case in "${tests_with_system_drop[@]}"; do
-    grep -qP '(--|#)\s*[Tt]ags:.*no-parallel' "$test_case" || echo "Test with SYSTEM DROP should have no-parallel tag: $test_case"
+for test_case in "${tests_with_global_cache_drop[@]}"; do
+    grep -qP '(?:[Tt]ags:\s*|,\s*)no-parallel(?::[a-z0-9-]+)?(?=\s*(?:,|$))' "$test_case" || echo "Test with a global SYSTEM cache clear should have a no-parallel tag: $test_case"
+done
+
+allowed_no_parallel_groups='mark-cache|primary-index-cache|filesystem-cache|query-condition-cache|metadata-caches|misc-caches|xml-entities|stateful'
+tests_with_no_parallel_group=( $(
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
+        xargs grep -lP '(--|#)\s*[Tt]ags:.*no-parallel:' |
+        sort -u
+) )
+for test_case in "${tests_with_no_parallel_group[@]}"; do
+    invalid_groups=$(grep -oP 'no-parallel:\K[a-z0-9-]+' "$test_case" | grep -vP "^(${allowed_no_parallel_groups})$" || true)
+    [ -z "$invalid_groups" ] || echo "Unknown no-parallel concurrency group in $test_case: $invalid_groups"
+done
+
+tests_with_no_parallel=( $(
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
+        xargs grep -lP '(?:[Tt]ags:\s*|,\s*)no-parallel(?::[a-z0-9-]+)?(?=\s*(?:,|$))' |
+        sort -u
+) )
+for test_case in "${tests_with_no_parallel[@]}"; do
+    grep -qP '(--|#)\s*Tag no-parallel:\s*\S' "$test_case" || echo "Test with no-parallel tag should document its reason: $test_case"
 done
 
 # Shell tests that send HTTP requests via curl and then check system log tables
