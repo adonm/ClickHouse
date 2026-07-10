@@ -36,9 +36,7 @@ size_t QueryConditionCache::EntryWeight::operator()(const Entry & entry) const
     /// Estimate the memory size of `std::vector<bool>` (it uses bit-packing internally)
     /// Round up to bytes.
     memory += (entry.matching_marks.capacity() + 7) / 8;
-#if defined(DEBUG_OR_SANITIZER_BUILD)
     memory += entry.part_name.capacity() + entry.condition.capacity();
-#endif
     return memory;
 }
 
@@ -56,11 +54,7 @@ void QueryConditionCache::write(
 
     Key key = makeKey(table_id, part_name, condition_hash);
 
-#if defined(DEBUG_OR_SANITIZER_BUILD)
     auto load_func = [&](){ return std::make_shared<Entry>(marks_count, table_id, part_name, condition_hash, condition); };
-#else
-    auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
-#endif
 
     auto [entry, inserted] = cache.getOrSet(key, load_func);
 
@@ -159,6 +153,14 @@ void QueryConditionCache::clear()
     cache.clear();
 }
 
+void QueryConditionCache::clearTable(const UUID & table_id)
+{
+    cache.remove([&](const Key &, const Cache::MappedPtr & entry)
+    {
+        return entry->table_id == table_id;
+    });
+}
+
 void QueryConditionCache::setMaxSizeInBytes(size_t max_size_in_bytes)
 {
     cache.setMaxSizeInBytes(max_size_in_bytes);
@@ -169,13 +171,6 @@ size_t QueryConditionCache::maxSizeInBytes() const
     return cache.maxSizeInBytes();
 }
 
-QueryConditionCache::Entry::Entry(size_t mark_count)
-    : matching_marks(mark_count, true) /// by default, all marks potentially are potential matches, i.e. we can't skip them
-{
-}
-
-
-#if defined(DEBUG_OR_SANITIZER_BUILD)
 QueryConditionCache::Entry::Entry(
     size_t mark_count_,
     const UUID & table_id_,
@@ -187,7 +182,7 @@ QueryConditionCache::Entry::Entry(
     , condition_hash(condition_hash_)
     , condition(condition_)
     , matching_marks(mark_count_, true)
-        {}
-#endif
+{
+}
 
 }
