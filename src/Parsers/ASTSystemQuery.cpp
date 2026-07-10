@@ -608,6 +608,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::CLEAR_DNS_CACHE:
         case Type::CLEAR_CONNECTIONS_CACHE:
         case Type::CLEAR_MMAP_CACHE:
+        case Type::CLEAR_ENCRYPTION_HEADERS_CACHE:
         case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
         case Type::CLEAR_S3_CLIENT_CACHE:
         case Type::CLEAR_ICEBERG_METADATA_CACHE:

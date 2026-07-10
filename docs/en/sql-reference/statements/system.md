@@ -288,6 +288,10 @@ SYSTEM {CLEAR | DROP} QUERY CONDITION CACHE [ON CLUSTER cluster_name] [FOR TABLE
 
 If `FOR TABLE` is specified, ClickHouse clears only entries belonging to that table.
 
+## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE {#drop-encryption-headers-cache}
+
+Clears the encryption headers cache. This cache holds the encryption headers read from the front of encrypted files and is used by the experimental `use_reader_executor` read path to avoid re-reading them; its size is configured by the `encryption_header_cache_size` server setting.
+
 ## SYSTEM CLEAR|DROP QUERY CACHE {#drop-query-cache}
 
 ```sql

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-distributed-cache
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 
