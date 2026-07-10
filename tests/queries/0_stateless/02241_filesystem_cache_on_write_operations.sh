@@ -113,7 +113,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
 
     $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --mutations_sync=2 --query "ALTER TABLE test_02241 UPDATE value = 'kek' WHERE key = 100"
     $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
-    $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)"
+    $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(2100000)"
 
     $CLICKHOUSE_CLIENT --echo --query "SYSTEM FLUSH LOGS query_log"
 
@@ -123,7 +123,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
         system.query_log
     WHERE
         event_date >= yesterday() AND event_time >= now() - 600
-        AND query LIKE '%SELECT number, toString(number) FROM numbers(5000000)%'
+        AND query LIKE '%SELECT number, toString(number) FROM numbers(2100000)%'
         AND type = 'QueryFinish'
         AND current_database = currentDatabase()
     ORDER BY
