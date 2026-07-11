@@ -15,14 +15,14 @@ ${CLICKHOUSE_CLIENT} --query "drop table if exists data;"
 ${CLICKHOUSE_CLIENT} --query "create table data (A UInt8, B UInt8) engine=MergeTree() order by A;"
 
 # Server side
-${CLICKHOUSE_CLIENT} --input_format_allow_errors_num 4 --input_format_record_errors_file_path "errors_server" --query "insert into data select * from file('a.csv', 'CSV', 'c1 UInt8, c2 UInt8');"
+${CLICKHOUSE_CLIENT} --input_format_allow_errors_num 4 --input_format_record_errors_file_path "${CLICKHOUSE_TEST_UNIQUE_NAME}/errors_server" --query "insert into data select * from file('${CLICKHOUSE_TEST_UNIQUE_NAME}/a.csv', 'CSV', 'c1 UInt8, c2 UInt8');"
 sleep 2
-${CLICKHOUSE_CLIENT} --query "select * except (time) from file('errors_server', 'CSV', 'time DateTime, database Nullable(String), table Nullable(String), offset UInt32, reason String, raw_data String');"
+${CLICKHOUSE_CLIENT} --query "select * except (time) from file('${CLICKHOUSE_TEST_UNIQUE_NAME}/errors_server', 'CSV', 'time DateTime, database Nullable(String), table Nullable(String), offset UInt32, reason String, raw_data String');"
 
 # Client side
 ${CLICKHOUSE_CLIENT} --input_format_allow_errors_num 4 --input_format_record_errors_file_path "${CLICKHOUSE_USER_FILES_UNIQUE}/errors_client" --query "insert into data(A, B) format CSV" < ${CLICKHOUSE_USER_FILES_UNIQUE}/a.csv
 sleep 2
-${CLICKHOUSE_CLIENT} --query "select * except (time) from file('errors_client', 'CSV', 'time DateTime, database Nullable(String), table Nullable(String), offset UInt32, reason String, raw_data String');"
+${CLICKHOUSE_CLIENT} --query "select * except (time) from file('${CLICKHOUSE_TEST_UNIQUE_NAME}/errors_client', 'CSV', 'time DateTime, database Nullable(String), table Nullable(String), offset UInt32, reason String, raw_data String');"
 
 # Restore
 ${CLICKHOUSE_CLIENT} --query "drop table if exists data;"

@@ -5,10 +5,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -q "insert into table function file(data.jsonl, 'JSONEachRow', 'x UInt32 default 42, y String') select number as x, 'String' as y from numbers(10)"
+$CLICKHOUSE_CLIENT -q "insert into table function file('${CLICKHOUSE_TEST_UNIQUE_NAME}/data.jsonl', 'JSONEachRow', 'x UInt32 default 42, y String') select number as x, 'String' as y from numbers(10)"
 
 $CLICKHOUSE_CLIENT -q "drop table if exists test"
-$CLICKHOUSE_CLIENT -q "create table test engine=File(JSONEachRow, 'data.jsonl')"
+$CLICKHOUSE_CLIENT -q "create table test engine=File(JSONEachRow, '${CLICKHOUSE_TEST_UNIQUE_NAME}/data.jsonl')"
 $CLICKHOUSE_CLIENT -q "show create table test"
 $CLICKHOUSE_CLIENT -q "detach table test"
 

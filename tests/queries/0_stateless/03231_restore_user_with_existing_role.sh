@@ -90,3 +90,6 @@ ${CLICKHOUSE_CLIENT} --query "SELECT 'user_a', count() FROM system.users WHERE n
 ${CLICKHOUSE_CLIENT} --query "SELECT 'role_b', count() FROM system.roles WHERE name = '${role_b}'"
 ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE system.roles FROM ${backup_name} FORMAT Null"
 do_check
+
+${CLICKHOUSE_CLIENT} --query "DROP USER ${user_a}"
+${CLICKHOUSE_CLIENT} --query "DROP ROLE ${role_b}"

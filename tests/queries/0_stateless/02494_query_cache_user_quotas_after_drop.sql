@@ -1,3 +1,7 @@
+-- Tags: no-parallel
+-- Tag no-parallel: `query_cache_max_entries` is a per-user quota counted across the whole
+-- server-wide query cache, and all stateless tests run as the same user, so any concurrent
+-- test caching a query result perturbs the expected entry counts.
 
 -- Tests per-user quotas of the query cache. Settings 'query_cache_max_size_in_bytes' and 'query_cache_max_entries' are actually supposed to
 -- be used in a settings profile, together with a readonly constraint. For simplicity, test both settings stand-alone in a stateless test

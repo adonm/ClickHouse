@@ -23,8 +23,8 @@ query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_local"
 $CLICKHOUSE_CLIENT --query_id "$query_id" -q "SELECT * FROM local" > /dev/null
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
-Initial_query_diff=$($CLICKHOUSE_CLIENT -q "SELECT countIf(is_initial_query) FROM system.query_log WHERE initial_query_id = '$query_id' AND type != 'QueryStart' AND current_database = currentDatabase()")
-query_diff=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE initial_query_id = '$query_id' AND type != 'QueryStart' AND current_database = currentDatabase()")
+Initial_query_diff=$($CLICKHOUSE_CLIENT -q "SELECT countIf(is_initial_query) FROM system.query_log WHERE initial_query_id = '$query_id' AND type != 'QueryStart' AND current_database IN (currentDatabase(), 'default')")
+query_diff=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE initial_query_id = '$query_id' AND type != 'QueryStart' AND current_database IN (currentDatabase(), 'default')")
 
 echo "Initial Query Difference: $Initial_query_diff"
 echo "Query Difference: $query_diff"
@@ -34,8 +34,8 @@ query_id="${CLICKHOUSE_TEST_UNIQUE_NAME}_distributed"
 $CLICKHOUSE_CLIENT --query_id "$query_id" -q "SELECT * FROM distributed SETTINGS prefer_localhost_replica = 0" > /dev/null
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
-Initial_query_diff=$($CLICKHOUSE_CLIENT -q "SELECT countIf(is_initial_query) FROM system.query_log WHERE initial_query_id = '$query_id' AND type != 'QueryStart' AND current_database = currentDatabase()")
-query_diff=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE initial_query_id = '$query_id' AND type != 'QueryStart' AND current_database = currentDatabase()")
+Initial_query_diff=$($CLICKHOUSE_CLIENT -q "SELECT countIf(is_initial_query) FROM system.query_log WHERE initial_query_id = '$query_id' AND type != 'QueryStart' AND current_database IN (currentDatabase(), 'default')")
+query_diff=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE initial_query_id = '$query_id' AND type != 'QueryStart' AND current_database IN (currentDatabase(), 'default')")
 
 echo "Initial Query Difference: $Initial_query_diff"
 echo "Query Difference: $query_diff"

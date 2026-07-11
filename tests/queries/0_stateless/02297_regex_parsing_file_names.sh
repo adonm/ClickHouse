@@ -24,7 +24,7 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_regex;"
 
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_regex (id UInt64) ENGINE = MergeTree() order by id;"
 
-${CLICKHOUSE_CLIENT} -q "INSERT INTO t_regex SELECT * FROM file('file_{0..10}.csv','CSV');"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO t_regex SELECT * FROM file('${CLICKHOUSE_TEST_UNIQUE_NAME}/file_{0..10}.csv','CSV');"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() from t_regex;"
 
 rm -rf ${CLICKHOUSE_USER_FILES_UNIQUE}/file_{0..10}.csv;
