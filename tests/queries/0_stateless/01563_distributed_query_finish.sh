@@ -35,7 +35,8 @@ for ((i = 0; i < 100; ++i)); do
 
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
     # expect zero new network errors attributed to this query (or its shard sub-queries)
-    network_errors=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE initial_query_id = '$query_id' AND exception_code = 210")
+    # shard-side sub-queries of the localhost cluster log current_database = 'default'
+    network_errors=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE current_database IN (currentDatabase(), 'default') AND initial_query_id = '$query_id' AND exception_code = 210")
 
     if [[ $network_errors -eq 0 ]]; then
         break

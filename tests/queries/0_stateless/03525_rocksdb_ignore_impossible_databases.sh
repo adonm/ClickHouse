@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: use-rocksdb, no-parallel
+# Tags: use-rocksdb, no-parallel:remote-databases
 # Tag no-parallel: creates a PostgreSQL database pointing at an unreachable host; it is visible
 #   in system.tables, so a concurrent unfiltered scan would also try to connect to it.
+#   The `remote-databases` group serializes the tests that attach such databases.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

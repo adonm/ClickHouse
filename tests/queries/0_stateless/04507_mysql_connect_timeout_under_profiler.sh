@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel:remote-databases
 # Tag no-fasttest: depends on libmysql (MySQL database engine), not built in fast test.
 # Tag no-parallel: attaches a MySQL database pointing at an unreachable host; it is visible
 #   in system.tables, so a concurrent unfiltered scan would also try to connect to it.
+#   The `remote-databases` group serializes the tests that attach such databases.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
