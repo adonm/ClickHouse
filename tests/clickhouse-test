@@ -161,6 +161,7 @@ NO_PARALLEL_GROUPS = {
     "misc-caches",
     "primary-index-cache",
     "query-condition-cache",
+    "remote-databases",
     "stateful",
     "xml-entities",
 }
