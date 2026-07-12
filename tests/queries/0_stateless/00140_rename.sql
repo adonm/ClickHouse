@@ -1,8 +1,12 @@
 -- Tags: stateful, no-replicated-database
 -- Tag no-replicated-database: Does not support renaming of multiple tables in single query
 
-CREATE TABLE hits CLONE AS test.hits;
-CREATE TABLE visits CLONE AS test.visits;
+-- Local fixtures instead of renaming the shared stateful tables. Only the two
+-- counters the assertions read are copied. `CLONE AS` is not usable here: it
+-- inherits the source table's storage, which is static (read-only) when the
+-- stateful tables are attached from a web disk.
+CREATE TABLE hits ENGINE = MergeTree ORDER BY CounterID AS SELECT CounterID FROM test.hits WHERE CounterID = 732797;
+CREATE TABLE visits ENGINE = MergeTree ORDER BY CounterID AS SELECT CounterID, Sign FROM test.visits WHERE CounterID = 912887;
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 

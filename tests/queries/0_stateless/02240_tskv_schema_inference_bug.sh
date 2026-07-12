@@ -15,5 +15,5 @@ c=[2]\ta=2\tb=\N}
 
 a=\N
 c=[3]\ta=\N'  > $DATA_FILE
-$CLICKHOUSE_CLIENT --max_read_buffer_size=4 -q "desc file('$FILE_NAME', 'TSKV')"
-$CLICKHOUSE_CLIENT --max_read_buffer_size=4 -q "select * from file('$FILE_NAME', 'TSKV')"
+$CLICKHOUSE_CLIENT --max_read_buffer_size=4 -q "desc file('${CLICKHOUSE_TEST_UNIQUE_NAME}/$FILE_NAME', 'TSKV')"
+$CLICKHOUSE_CLIENT --max_read_buffer_size=4 -q "select * from file('${CLICKHOUSE_TEST_UNIQUE_NAME}/$FILE_NAME', 'TSKV')"

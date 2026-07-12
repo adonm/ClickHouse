@@ -91,9 +91,14 @@ run_alter_comment_thread() {
 run_selects_thread() {
   log "❕ Select thread $1 started with PID $BASHPID"
   for i in $(seq 1 "$RUNS"); do
-    # to make tests_with_database_column in various_checks.sh happy: database = currentDatabase()
-    test_query "SELECT * FROM system.databases -- thread $1"
-    test_query "SELECT * FROM system.tables    -- thread $1"
+    # Scope the scans to this test's databases: an unfiltered scan iterates every
+    # database, including concurrent tests' remote databases with unreachable
+    # hosts, whose connection errors would fail these queries. The database
+    # predicate is pushed down, so the scan still locks and iterates exactly the
+    # databases being renamed/commented — the interaction this test hunts.
+    # (also makes tests_with_database_column in various_checks.sh happy: database = currentDatabase())
+    test_query "SELECT * FROM system.databases WHERE database LIKE '${CLICKHOUSE_DATABASE_TEST}%' -- thread $1"
+    test_query "SELECT * FROM system.tables    WHERE database LIKE '${CLICKHOUSE_DATABASE_TEST}%' -- thread $1"
     (( i % 1000 == 0 )) && log "Selects thread $1: $i runs done"
   done
   log "✅ Selects thread $1 finished"

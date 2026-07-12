@@ -27,10 +27,10 @@ do
 	echo $i$'\t'$i >> $CLICKHOUSE_USER_FILES_UNIQUE/d1/d2/d3/text3.txt
 done
 
-${CLICKHOUSE_CLIENT} -q "SELECT * from file ('d1/*','TSV', 'Index UInt8, Number UInt8')" | sort --numeric-sort
-${CLICKHOUSE_CLIENT} -q "SELECT * from file ('d1/**','TSV', 'Index UInt8, Number UInt8')" | sort --numeric-sort
-${CLICKHOUSE_CLIENT} -q "SELECT * from file ('d1/*/tex*','TSV', 'Index UInt8, Number UInt8')" | sort --numeric-sort
-${CLICKHOUSE_CLIENT} -q "SELECT * from file ('d1/**/tex*','TSV', 'Index UInt8, Number UInt8')" | sort --numeric-sort
+${CLICKHOUSE_CLIENT} -q "SELECT * from file('${CLICKHOUSE_TEST_UNIQUE_NAME}/d1/*','TSV', 'Index UInt8, Number UInt8')" | sort --numeric-sort
+${CLICKHOUSE_CLIENT} -q "SELECT * from file('${CLICKHOUSE_TEST_UNIQUE_NAME}/d1/**','TSV', 'Index UInt8, Number UInt8')" | sort --numeric-sort
+${CLICKHOUSE_CLIENT} -q "SELECT * from file('${CLICKHOUSE_TEST_UNIQUE_NAME}/d1/*/tex*','TSV', 'Index UInt8, Number UInt8')" | sort --numeric-sort
+${CLICKHOUSE_CLIENT} -q "SELECT * from file('${CLICKHOUSE_TEST_UNIQUE_NAME}/d1/**/tex*','TSV', 'Index UInt8, Number UInt8')" | sort --numeric-sort
 
 
 rm $CLICKHOUSE_USER_FILES_UNIQUE/d1/d2/d3/text3.txt

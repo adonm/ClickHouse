@@ -16,16 +16,16 @@ c=[2]\ta=2\tb=\N}
 a=\N
 
 c=[3]\ta=\N' > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'TSKV')"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'TSKV')"
+$CLICKHOUSE_CLIENT -q "desc file('${CLICKHOUSE_TEST_UNIQUE_NAME}/$FILE_NAME', 'TSKV')"
+$CLICKHOUSE_CLIENT -q "select * from file('${CLICKHOUSE_TEST_UNIQUE_NAME}/$FILE_NAME', 'TSKV')"
 
 echo -e 'b=1
 a=2\tc=3
 
 e=3
 c=1\tb=3\ta=3' > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'TSKV')"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'TSKV')"
+$CLICKHOUSE_CLIENT -q "desc file('${CLICKHOUSE_TEST_UNIQUE_NAME}/$FILE_NAME', 'TSKV')"
+$CLICKHOUSE_CLIENT -q "select * from file('${CLICKHOUSE_TEST_UNIQUE_NAME}/$FILE_NAME', 'TSKV')"
 
 
 echo -e '{"a" : 1, "b" : "s1", "c" : null}
@@ -33,16 +33,16 @@ echo -e '{"a" : 1, "b" : "s1", "c" : null}
 {}
 {"a" : null}
 {"c" : [3], "a" : null}' > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow')"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow')"
+$CLICKHOUSE_CLIENT -q "desc file('${CLICKHOUSE_TEST_UNIQUE_NAME}/$FILE_NAME', 'JSONEachRow')"
+$CLICKHOUSE_CLIENT -q "select * from file('${CLICKHOUSE_TEST_UNIQUE_NAME}/$FILE_NAME', 'JSONEachRow')"
 
 echo -e '{"b" : 1}
 {"a" : 2, "c" : 3}
 {}
 {"e" : 3}
 {"c" : 1, "b" : 3, "a" : 3}' > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'JSONEachRow')"
-$CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'JSONEachRow')"
+$CLICKHOUSE_CLIENT -q "desc file('${CLICKHOUSE_TEST_UNIQUE_NAME}/$FILE_NAME', 'JSONEachRow')"
+$CLICKHOUSE_CLIENT -q "select * from file('${CLICKHOUSE_TEST_UNIQUE_NAME}/$FILE_NAME', 'JSONEachRow')"
 
 
 rm $DATA_FILE

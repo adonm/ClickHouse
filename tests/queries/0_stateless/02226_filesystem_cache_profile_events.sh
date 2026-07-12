@@ -10,6 +10,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     echo "Using storage policy: $STORAGE_POLICY"
 
+    # The cache of the `azure_cache` policy lives on the `cached_azure` disk,
+    # and caches are registered under the disk name.
+    CACHE_NAME="$STORAGE_POLICY"
+    if [ "$STORAGE_POLICY" == "azure_cache" ]; then
+        CACHE_NAME="cached_azure"
+    fi
+
     $CLICKHOUSE_CLIENT --multiline  --query """
     SET max_memory_usage='20G';
     SET enable_filesystem_cache_on_write_operations = 0;
@@ -92,7 +99,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     TRUNCATE TABLE test_02226;
     SELECT count() FROM test_02226;
 
-    SYSTEM CLEAR FILESYSTEM CACHE '$STORAGE_POLICY';
+    SYSTEM CLEAR FILESYSTEM CACHE '$CACHE_NAME';
 
     INSERT INTO test_02226 SELECT * FROM generateRandom('key UInt32, value String') LIMIT 10000;
     """
