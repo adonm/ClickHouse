@@ -19,6 +19,7 @@
     "options": [
       "copy",
       "view",
+      "download-pdf",
       {
         "description": "Setup instructions for docs MCP server",
         "href": "https://clickhouse.com/docs#claude-code",
@@ -68,7 +69,7 @@
               {
                 "href": "#",
                 "icon": "/images/icons/section-header.svg",
-                "item": "ClickHouse"
+                "item": "ClickHouse Cloud"
               },
               { "$ref": "./products/cloud/navigation.json" },
               { "$ref": "./products/managed-postgres/navigation.json" },
@@ -151,6 +152,9 @@
   },
   "redirects": { "$ref": "./_site/redirects.json" },
   "scripts": [
+    {
+      "src": "/_site/customizations/galaxy.js"
+    },
     {
       "src": "/_site/customizations/scroll-reset.js"
     },
