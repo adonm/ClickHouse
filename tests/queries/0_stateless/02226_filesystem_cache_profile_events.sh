@@ -30,52 +30,26 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
 
     query="SELECT * FROM test_02226 LIMIT 10"
 
-    query_id=$($CLICKHOUSE_CLIENT --query "select queryID() from ($query) limit 1" 2>&1)
-
-    $CLICKHOUSE_CLIENT --multiline  --query """
-    SYSTEM FLUSH LOGS query_log;
-    SELECT ProfileEvents['CachedReadBufferReadFromCacheHits'] > 0 as remote_fs_cache_hit,
-           ProfileEvents['CachedReadBufferReadFromCacheMisses'] > 0 as remote_fs_cache_miss,
-           ProfileEvents['CachedReadBufferReadFromSourceBytes'] > 0 as remote_fs_read,
-           ProfileEvents['CachedReadBufferReadFromCacheBytes'] > 0 as remote_fs_cache_read,
-           ProfileEvents['CachedReadBufferCacheWriteBytes'] > 0 as remote_fs_read_and_download
-    FROM system.query_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id='$query_id'
-    AND type = 'QueryFinish'
-    AND current_database = currentDatabase()
-    ORDER BY query_start_time DESC
-    LIMIT 1;
-    """
+    query_id_1=$($CLICKHOUSE_CLIENT --query "select queryID() from ($query) limit 1" 2>&1)
 
     $CLICKHOUSE_CLIENT --multiline --query """
     set remote_filesystem_read_method = 'read';
     set local_filesystem_read_method = 'pread';
     """
 
-    query_id=$($CLICKHOUSE_CLIENT --query "select queryID() from ($query) limit 1" 2>&1)
-
-    $CLICKHOUSE_CLIENT --multiline  --query """
-    SYSTEM FLUSH LOGS query_log;
-    SELECT ProfileEvents['CachedReadBufferReadFromCacheHits'] > 0 as remote_fs_cache_hit,
-           ProfileEvents['CachedReadBufferReadFromCacheMisses'] > 0 as remote_fs_cache_miss,
-           ProfileEvents['CachedReadBufferReadFromSourceBytes'] > 0 as remote_fs_read,
-           ProfileEvents['CachedReadBufferReadFromCacheBytes'] > 0 as remote_fs_cache_read,
-           ProfileEvents['CachedReadBufferCacheWriteBytes'] > 0 as remote_fs_read_and_download
-    FROM system.query_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id='$query_id'
-    AND type = 'QueryFinish'
-    AND current_database = currentDatabase()
-    ORDER BY query_start_time DESC
-    LIMIT 1;
-    """
+    query_id_2=$($CLICKHOUSE_CLIENT --query "select queryID() from ($query) limit 1" 2>&1)
 
 
     $CLICKHOUSE_CLIENT --multiline --query """
     set remote_filesystem_read_method='threadpool';
     """
 
-    query_id=$($CLICKHOUSE_CLIENT --query "select queryID() from ($query) limit 1")
+    query_id_3=$($CLICKHOUSE_CLIENT --query "select queryID() from ($query) limit 1")
 
+    # The three profiled queries run back-to-back and the query_log checks happen
+    # afterwards: the checks assert filesystem-cache hits, and an intervening flush
+    # plus query_log scan gives concurrent tests' cache traffic a seconds-long
+    # window to evict this test's cached segments (the shared cache is small).
     $CLICKHOUSE_CLIENT --multiline  --query """
     SYSTEM FLUSH LOGS query_log;
     SELECT ProfileEvents['CachedReadBufferReadFromCacheHits'] > 0 as remote_fs_cache_hit,
@@ -84,12 +58,41 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
            ProfileEvents['CachedReadBufferReadFromCacheBytes'] > 0 as remote_fs_cache_read,
            ProfileEvents['CachedReadBufferCacheWriteBytes'] > 0 as remote_fs_read_and_download
     FROM system.query_log
-    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id='$query_id'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id='$query_id_1'
     AND type = 'QueryFinish'
     AND current_database = currentDatabase()
     ORDER BY query_start_time DESC
     LIMIT 1;
     """
+
+    $CLICKHOUSE_CLIENT --multiline  --query """
+    SELECT ProfileEvents['CachedReadBufferReadFromCacheHits'] > 0 as remote_fs_cache_hit,
+           ProfileEvents['CachedReadBufferReadFromCacheMisses'] > 0 as remote_fs_cache_miss,
+           ProfileEvents['CachedReadBufferReadFromSourceBytes'] > 0 as remote_fs_read,
+           ProfileEvents['CachedReadBufferReadFromCacheBytes'] > 0 as remote_fs_cache_read,
+           ProfileEvents['CachedReadBufferCacheWriteBytes'] > 0 as remote_fs_read_and_download
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id='$query_id_2'
+    AND type = 'QueryFinish'
+    AND current_database = currentDatabase()
+    ORDER BY query_start_time DESC
+    LIMIT 1;
+    """
+
+    $CLICKHOUSE_CLIENT --multiline  --query """
+    SELECT ProfileEvents['CachedReadBufferReadFromCacheHits'] > 0 as remote_fs_cache_hit,
+           ProfileEvents['CachedReadBufferReadFromCacheMisses'] > 0 as remote_fs_cache_miss,
+           ProfileEvents['CachedReadBufferReadFromSourceBytes'] > 0 as remote_fs_read,
+           ProfileEvents['CachedReadBufferReadFromCacheBytes'] > 0 as remote_fs_cache_read,
+           ProfileEvents['CachedReadBufferCacheWriteBytes'] > 0 as remote_fs_read_and_download
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id='$query_id_3'
+    AND type = 'QueryFinish'
+    AND current_database = currentDatabase()
+    ORDER BY query_start_time DESC
+    LIMIT 1;
+    """
+
 
     $CLICKHOUSE_CLIENT --multiline  --query """
     SELECT * FROM test_02226 WHERE value LIKE '%abc%' ORDER BY value LIMIT 10 FORMAT Null;
