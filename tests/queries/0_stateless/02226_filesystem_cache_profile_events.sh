@@ -10,19 +10,24 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     echo "Using storage policy: $STORAGE_POLICY"
 
-    # The cache of the `azure_cache` policy lives on the `cached_azure` disk,
-    # and caches are registered under the disk name.
-    CACHE_NAME="$STORAGE_POLICY"
-    if [ "$STORAGE_POLICY" == "azure_cache" ]; then
-        CACHE_NAME="cached_azure"
-    fi
+    # Use a per-test inline cache disk over the same backing store the named
+    # policy would use. The shared CI caches (s3_cache is only 200 MiB) are
+    # thrashed by concurrent tests, which both evicts this test's segments
+    # between queries and starves cache-write reservations - the hit/miss
+    # assertions below need a cache nothing else touches.
+    case "$STORAGE_POLICY" in
+        s3_cache)    UNDERLYING_DISK="s3_disk" ;;
+        local_cache) UNDERLYING_DISK="local_disk" ;;
+        azure_cache) UNDERLYING_DISK="azure" ;;
+    esac
+    CACHE_NAME="02226_${STORAGE_POLICY}"
 
     $CLICKHOUSE_CLIENT --multiline  --query """
     SET max_memory_usage='20G';
     SET enable_filesystem_cache_on_write_operations = 0;
 
     DROP TABLE IF EXISTS test_02226;
-    CREATE TABLE test_02226 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='$STORAGE_POLICY';
+    CREATE TABLE test_02226 (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS disk = disk(type = cache, name = '$CACHE_NAME', path = '$CACHE_NAME/', max_size = '100Mi', cache_on_write_operations = 1, disk = '$UNDERLYING_DISK');
     INSERT INTO test_02226 SELECT * FROM generateRandom('key UInt32, value String') LIMIT 10000;
 
     SET remote_filesystem_read_method='threadpool';

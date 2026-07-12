@@ -1,4 +1,5 @@
--- Tags: stateful
+-- Tags: stateful, long, no-flaky-check
+-- no-flaky-check: full scans of test.hits per Log-family engine approach the 180 s per-test budget on sanitizer builds
 SET check_query_single_value_result = 1;
 
 DROP TABLE IF EXISTS hits_log;

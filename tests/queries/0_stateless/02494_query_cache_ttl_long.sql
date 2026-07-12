@@ -1,6 +1,10 @@
--- Tags: no-fasttest, long
+-- Tags: no-fasttest, no-parallel, long
 -- Tag no-fasttest: Test runtime is > 6 sec
 -- Tag long: Test runtime is > 6 sec
+-- Tag no-parallel: asserts that a stale query-cache entry stays visible until refreshed;
+--   any concurrent test inserting into the query cache triggers eviction of stale
+--   entries, which removes this test's entry between the checks (tag scoping cannot
+--   prevent that - eviction is cache-wide).
 
 SET query_cache_tag = '02494_query_cache_ttl_long';
 
