@@ -1,0 +1,76 @@
+---
+description: 'System table containing the query ids of the queries executed in the current session.'
+keywords: ['system table', 'session_query_ids', 'query_id', 'session']
+sidebar_label: 'session_query_ids'
+sidebar_position: 82
+slug: /operations/system-tables/session_query_ids
+title: 'system.session_query_ids'
+doc_type: 'reference'
+---
+
+# system.session_query_ids {#system-session-query-ids}
+
+Contains the query ids of the queries executed in the current session, in execution order. Use it to find "the queries I just ran" in [`system.query_log`](/operations/system-tables/query_log) without assigning `query_id` client-side or tagging queries with `log_comment`.
+
+The contents are session-scoped: each session sees only its own history, and other sessions' queries never appear.
+
+A query id is recorded when the query *starts*, so:
+
+- The currently running query is already visible when it selects from the table.
+- Failed queries are recorded too — retrieving the id of a query that just failed is a primary use case.
+
+Internal queries (system log flushes and similar) are not recorded. Distributed sub-queries executed on remote shards belong to the remote servers' sessions and are not recorded either.
+
+## Columns {#columns}
+
+- `sequence_number` ([UInt64](/sql-reference/data-types/int-uint)) — Position of the query within the session, monotonically increasing.
+- `query_id` ([String](/sql-reference/data-types/string)) — The query id, can be joined with [`system.query_log`](/operations/system-tables/query_log).
+
+## Session scoping per interface {#session-scoping-per-interface}
+
+- **Native/TCP connections** (`clickhouse-client`, drivers) and **`clickhouse-local`**: the session is the connection, so the history accumulates across all queries of the connection, including multi-query client invocations.
+- **HTTP with the `session_id` parameter**: the history persists across requests that pass the same `session_id`, until the session expires.
+- **HTTP without `session_id`**: every request is its own session, so the table only ever shows the current query.
+
+## History size {#history-size}
+
+The history is a ring buffer bounded by the session setting [`session_query_ids_history_size`](/operations/settings/settings#session_query_ids_history_size) (default `1000`); when the history exceeds this size, the oldest entries are evicted first. Setting it to `0` disables recording, and the table returns no rows.
+
+## TRUNCATE {#truncate}
+
+`TRUNCATE TABLE system.session_query_ids` clears the history of the current session. The sequence counter is not reset, so `sequence_number` values are never reused within a session.
+
+## Example {#example}
+
+Run a few queries, then fetch their details from [`system.query_log`](/operations/system-tables/query_log):
+
+```sql
+SELECT 1 FORMAT Null;
+SELECT 2 FORMAT Null;
+
+SELECT * FROM system.session_query_ids;
+```
+
+```text
+┌─sequence_number─┬─query_id─────────────────────────────┐
+│               1 │ 4c9e97a3-b806-4a5c-9a94-5a614c3d0b3f │
+│               2 │ 8f9a2f59-30d3-4f8e-b3a1-6a0c1a4d3e2b │
+│               3 │ f2b1c4d8-7e6a-4b5c-8d9e-0a1b2c3d4e5f │
+└─────────────────┴──────────────────────────────────────┘
+```
+
+The current query is recorded at its start, so it appears as the last entry. Timestamps, status, and all other details are available by joining `system.query_log`:
+
+```sql
+SYSTEM FLUSH LOGS query_log;
+
+SELECT query_id, type, query, query_duration_ms
+FROM system.query_log
+WHERE query_id IN (SELECT query_id FROM system.session_query_ids)
+ORDER BY event_time_microseconds;
+```
+
+## See also {#see-also}
+
+- [`system.query_log`](/operations/system-tables/query_log) — details of executed queries
+- [`session_query_ids_history_size`](/operations/settings/settings#session_query_ids_history_size) setting
