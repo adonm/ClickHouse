@@ -114,6 +114,7 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/HypotheticalIndexStore.h>
+#include <Interpreters/SessionQueryIdsHistory.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/TraceCollector.h>
 #include <IO/AsyncReadCounters.h>
@@ -2731,25 +2732,16 @@ std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String 
     return holder;
 }
 
-void Context::recordSessionQueryId(const String & query_id, UInt64 max_history_size)
+SessionQueryIdsHistory & Context::getSessionQueryIdsHistory() const
 {
-    if (!session_query_ids_history)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session query id history can only be recorded on a session context");
-    session_query_ids_history->add(query_id, max_history_size);
-}
+    /// in session context so the history persists across queries
+    if (auto session_ctx = session_context.lock(); session_ctx && session_ctx.get() != this)
+        return session_ctx->getSessionQueryIdsHistory();
 
-SessionQueryIdsHistory::Entries Context::getSessionQueryIds() const
-{
+    std::lock_guard lock(mutex);
     if (!session_query_ids_history)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session query id history can only be read on a session context");
-    return session_query_ids_history->getEntries();
-}
-
-void Context::clearSessionQueryIds()
-{
-    if (!session_query_ids_history)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session query id history can only be cleared on a session context");
-    session_query_ids_history->clear();
+        session_query_ids_history = std::make_shared<SessionQueryIdsHistory>();
+    return *session_query_ids_history;
 }
 
 HypotheticalIndexStore & Context::getHypotheticalIndexStore() const
@@ -3743,9 +3735,6 @@ void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_set
 void Context::makeSessionContext()
 {
     session_context = shared_from_this();
-    /// Named HTTP sessions call this on every request on the same reused context; keep the history.
-    if (!session_query_ids_history)
-        session_query_ids_history = std::make_shared<SessionQueryIdsHistory>();
 }
 
 void Context::makeGlobalContext()

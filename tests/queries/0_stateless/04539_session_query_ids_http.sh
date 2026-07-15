@@ -20,6 +20,10 @@ ${CLICKHOUSE_CURL} -sS "${SESSION_URL}" -d "SELECT count() FROM system.session_q
 echo '-- the sequence counter is not reset by TRUNCATE'
 ${CLICKHOUSE_CURL} -sS "${SESSION_URL}" -d "SELECT min(sequence_number) > 1 FROM system.session_query_ids"
 
+echo '-- a query that fails to parse is recorded too'
+${CLICKHOUSE_CURL} -sS "${SESSION_URL}" -d "SELECT 1 FORMAT" >/dev/null 2>&1
+${CLICKHOUSE_CURL} -sS "${SESSION_URL}" -d "SELECT count() FROM system.session_query_ids"
+
 echo '-- session_query_ids_history_size = 0 disables recording'
 DISABLED_SESSION_URL="${CLICKHOUSE_URL}&session_id=${SESSION_ID}_disabled"
 ${CLICKHOUSE_CURL} -sS "${DISABLED_SESSION_URL}&session_query_ids_history_size=0" -d "SELECT 'not recorded' FORMAT Null"

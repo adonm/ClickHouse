@@ -4,6 +4,8 @@
 1
 -- the sequence counter is not reset by TRUNCATE
 1
+-- a query that fails to parse is recorded too
+4
 -- session_query_ids_history_size = 0 disables recording
 0
 1	1

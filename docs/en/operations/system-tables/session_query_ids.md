@@ -19,7 +19,7 @@ A query id is recorded when the query *starts*, so:
 - The currently running query is already visible when it selects from the table.
 - Failed queries are recorded too — retrieving the id of a query that just failed is a primary use case.
 
-Internal queries (system log flushes and similar) are not recorded. Distributed sub-queries executed on remote shards belong to the remote servers' sessions and are not recorded either.
+Internal queries (system log flushes and similar) are not recorded. Sub-queries that distributed queries run on remote shards are not recorded either — only the initiating query appears, in the initiator's session.
 
 ## Columns {#columns}
 
@@ -34,7 +34,9 @@ Internal queries (system log flushes and similar) are not recorded. Distributed 
 
 ## History size {#history-size}
 
-The history is a ring buffer bounded by the session setting [`session_query_ids_history_size`](/operations/settings/settings#session_query_ids_history_size) (default `1000`); when the history exceeds this size, the oldest entries are evicted first. Setting it to `0` disables recording, and the table returns no rows.
+The history is a ring buffer bounded by the session setting [`session_query_ids_history_size`](/operations/settings/settings#session_query_ids_history_size) (default `1000`); when the history exceeds this size, the oldest entries are evicted first. Setting it to `0` disables recording; entries recorded earlier stay in the table until truncated or evicted.
+
+The setting is read at query start, before the query is parsed, so a `SETTINGS` clause of the query itself does not affect whether that query is recorded; use `SET`, an HTTP URL parameter, or a settings profile instead.
 
 ## TRUNCATE {#truncate}
 

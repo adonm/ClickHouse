@@ -14,6 +14,9 @@ SELECT count() FROM system.session_query_ids;
 -- Sequence numbers are distinct and contiguous, i.e. monotonically increasing.
 SELECT count() = uniqExact(sequence_number), max(sequence_number) - min(sequence_number) + 1 = count() FROM system.session_query_ids;
 
+-- Rows are emitted in execution order.
+SELECT groupArray(sequence_number) = arraySort(groupArray(sequence_number)) FROM system.session_query_ids;
+
 -- The current query is visible in the table.
 SELECT count() FROM system.session_query_ids WHERE query_id = queryID();
 
@@ -41,3 +44,9 @@ SELECT 'evicted 1' FORMAT Null;
 SELECT 'evicted 2' FORMAT Null;
 SELECT 'evicted 3' FORMAT Null;
 SELECT count(), countIf(query_id = queryID()), max(sequence_number) - min(sequence_number) + 1 = count() FROM system.session_query_ids;
+
+-- Disabling recording keeps the already recorded entries visible, but new queries are not recorded:
+-- neither the marker nor the reading query below appears (the SET itself is still recorded).
+SET session_query_ids_history_size = 0;
+SELECT 'not recorded' FORMAT Null;
+SELECT count(), countIf(query_id = queryID()) FROM system.session_query_ids;

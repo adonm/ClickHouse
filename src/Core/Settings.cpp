@@ -2164,10 +2164,12 @@ Possible values:
 The maximum number of query ids kept in the session-local history exposed through the [`system.session_query_ids`](/operations/system-tables/session_query_ids) system table.
 The query id of every non-internal query executed in the session is recorded there at query start; when the history exceeds this size, the oldest entries are evicted first.
 
+The value is read at query start, before the query is parsed, so a `SETTINGS` clause of the query itself does not affect whether that query is recorded; use `SET`, an HTTP URL parameter, or a settings profile instead.
+
 Possible values:
 
 - Positive integer.
-- 0 — Recording is disabled and `system.session_query_ids` returns no rows.
+- 0 — Recording is disabled; entries recorded earlier stay in the table.
 )", 0) \
     \
     DECLARE(Bool, log_processors_profiles, true, R"(

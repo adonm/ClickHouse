@@ -60,6 +60,7 @@
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
+#include <Interpreters/SessionQueryIdsHistory.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
@@ -1202,10 +1203,12 @@ static BlockIO executeQueryImpl(
 
     /// Remember the query id in the session history exposed through `system.session_query_ids`.
     /// Recorded at query start deliberately, so that queries that later fail are captured too.
-    if (!internal && context->hasSessionContext())
+    /// Secondary queries of distributed queries are excluded: they arrive over pooled
+    /// inter-server connections whose sessions are shared between initiators.
+    if (!internal && client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY && context->hasSessionContext())
     {
         if (UInt64 history_size = settings[Setting::session_query_ids_history_size])
-            context->getSessionContext()->recordSessionQueryId(client_info.current_query_id, history_size);
+            context->getSessionQueryIdsHistory().add(client_info.current_query_id, history_size);
     }
 
     size_t max_query_size = settings[Setting::max_query_size];

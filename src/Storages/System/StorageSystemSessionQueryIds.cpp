@@ -1,8 +1,8 @@
 #include <Columns/IColumn.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/SessionQueryIdsHistory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/System/StorageSystemSessionQueryIds.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
@@ -10,11 +10,6 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsUInt64 session_query_ids_history_size;
-}
 
 ColumnsDescription StorageSystemSessionQueryIds::getColumnsDescription()
 {
@@ -27,10 +22,10 @@ ColumnsDescription StorageSystemSessionQueryIds::getColumnsDescription()
 
 void StorageSystemSessionQueryIds::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    if (!context->hasSessionContext() || context->getSettingsRef()[Setting::session_query_ids_history_size] == 0)
+    if (!context->hasSessionContext())
         return;
 
-    for (const auto & entry : context->getSessionContext()->getSessionQueryIds())
+    for (const auto & entry : context->getSessionQueryIdsHistory().getEntries())
     {
         res_columns[0]->insert(entry.sequence_number);
         res_columns[1]->insert(entry.query_id);
@@ -39,8 +34,8 @@ void StorageSystemSessionQueryIds::fillData(MutableColumns & res_columns, Contex
 
 void StorageSystemSessionQueryIds::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, TableExclusiveLockHolder &)
 {
-    if (context->hasSessionContext())
-        context->getSessionContext()->clearSessionQueryIds();
+    /// Throws THERE_IS_NO_SESSION when there is no session whose history could be cleared.
+    context->getSessionContext()->getSessionQueryIdsHistory().clear();
 }
 
 }

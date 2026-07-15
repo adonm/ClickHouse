@@ -236,3 +236,4 @@ SETTINGS skip_unavailable_shards = 1;
 ## See Also {#see-also}
 
 - [system.query_thread_log](/operations/system-tables/query_thread_log) — This table contains information about each query execution thread.
+- [system.session_query_ids](/operations/system-tables/session_query_ids) — This table contains the query ids of the queries executed in the current session, for finding your own queries in the log.
