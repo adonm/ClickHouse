@@ -3743,7 +3743,9 @@ void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_set
 void Context::makeSessionContext()
 {
     session_context = shared_from_this();
-    session_query_ids_history = std::make_shared<SessionQueryIdsHistory>();
+    /// Named HTTP sessions call this on every request on the same reused context; keep the history.
+    if (!session_query_ids_history)
+        session_query_ids_history = std::make_shared<SessionQueryIdsHistory>();
 }
 
 void Context::makeGlobalContext()
