@@ -17,6 +17,7 @@
 #include <Formats/FormatSettings.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/SessionQueryIdsHistory.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Parsers/IAST_fwd.h>
@@ -401,6 +402,11 @@ protected:
     String insert_format; /// Format, used in insert query.
 
     TemporaryTablesMapping external_tables_mapping;
+
+    /// History of query ids for `system.session_query_ids`. Set only on the session context
+    /// (in makeSessionContext) and reached from query contexts through getSessionContext().
+    std::shared_ptr<SessionQueryIdsHistory> session_query_ids_history;
+
     mutable std::shared_ptr<HypotheticalIndexStore> hypothetical_index_store;
     /// Query scalars
     Scalars scalars;
@@ -1011,6 +1017,12 @@ public:
     void addOrUpdateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table);
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
+
+    /// Per-session history of query ids for `system.session_query_ids`.
+    /// Must be called on the session context, see getSessionContext().
+    void recordSessionQueryId(const String & query_id, UInt64 max_history_size);
+    SessionQueryIdsHistory::Entries getSessionQueryIds() const;
+    void clearSessionQueryIds();
 
     HypotheticalIndexStore & getHypotheticalIndexStore() const;
 

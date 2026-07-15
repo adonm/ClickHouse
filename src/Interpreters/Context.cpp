@@ -2731,6 +2731,27 @@ std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String 
     return holder;
 }
 
+void Context::recordSessionQueryId(const String & query_id, UInt64 max_history_size)
+{
+    if (!session_query_ids_history)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session query id history can only be recorded on a session context");
+    session_query_ids_history->add(query_id, max_history_size);
+}
+
+SessionQueryIdsHistory::Entries Context::getSessionQueryIds() const
+{
+    if (!session_query_ids_history)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session query id history can only be read on a session context");
+    return session_query_ids_history->getEntries();
+}
+
+void Context::clearSessionQueryIds()
+{
+    if (!session_query_ids_history)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Session query id history can only be cleared on a session context");
+    session_query_ids_history->clear();
+}
+
 HypotheticalIndexStore & Context::getHypotheticalIndexStore() const
 {
     /// in session context so the store persists across queries
@@ -3722,6 +3743,7 @@ void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_set
 void Context::makeSessionContext()
 {
     session_context = shared_from_this();
+    session_query_ids_history = std::make_shared<SessionQueryIdsHistory>();
 }
 
 void Context::makeGlobalContext()

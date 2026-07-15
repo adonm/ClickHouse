@@ -189,6 +189,7 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsOverflowMode result_overflow_mode;
+    extern const SettingsUInt64 session_query_ids_history_size;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsOverflowMode sort_overflow_mode;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
@@ -1198,6 +1199,14 @@ static BlockIO executeQueryImpl(
     chassert(internal || CurrentThread::get().tryGetQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
 
     const Settings & settings = context->getSettingsRef();
+
+    /// Remember the query id in the session history exposed through `system.session_query_ids`.
+    /// Recorded at query start deliberately, so that queries that later fail are captured too.
+    if (!internal && context->hasSessionContext())
+    {
+        if (UInt64 history_size = settings[Setting::session_query_ids_history_size])
+            context->getSessionContext()->recordSessionQueryId(client_info.current_query_id, history_size);
+    }
 
     size_t max_query_size = settings[Setting::max_query_size];
     /// Don't limit the size of internal queries or distributed subquery.
