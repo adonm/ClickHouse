@@ -1,4 +1,8 @@
--- Tags: no-shared-merge-tree, no-parallel-replicas
+-- Tags: no-parallel, no-shared-merge-tree, no-parallel-replicas
+-- Tag no-parallel: asserts that prewarmed marks stay resident in the shared mark cache
+--   (only 128 MiB in stateless CI, see `tests/config/config.d/small_caches.xml`). Concurrent
+--   tests push the cache above `mark_cache_prewarm_ratio` - which makes `prewarmCaches` skip
+--   parts - or evict the prewarmed entries before the assertion queries run.
 
 DROP TABLE IF EXISTS t_prewarm_idx_cache_1;
 DROP TABLE IF EXISTS t_prewarm_idx_cache_2;

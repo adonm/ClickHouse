@@ -159,6 +159,18 @@ VERSION_PATTERN = r"^((\d+\.)?(\d+\.)?(\d+\.)?\d+)$"
 TEST_MAX_RUN_TIME_IN_SECONDS = 180
 UNKNOWN_TEST_DURATION_MS = 1000
 
+# `long` tests keep the pre-parallelization 600s budget: the default per-test
+# `--timeout` (180s) is calibrated for ordinary tests on a loaded worker, while
+# `long` tests legitimately run for minutes and slow down further when the rest
+# of the suite runs in parallel around them.
+LONG_TEST_TIMEOUT_SECONDS = 600
+
+
+def get_case_run_timeout(tags: Set[str], default_timeout: int) -> int:
+    if tags and "long" in tags:
+        return max(default_timeout, LONG_TEST_TIMEOUT_SECONDS)
+    return default_timeout
+
 NO_PARALLEL_GROUP_PREFIX = "no-parallel:"
 NO_PARALLEL_GROUPS = {
     "filesystem-cache",
@@ -167,7 +179,6 @@ NO_PARALLEL_GROUPS = {
     "misc-caches",
     "primary-index-cache",
     "query-condition-cache",
-    "remote-databases",
     "stateful",
     "xml-entities",
 }
@@ -3582,7 +3593,7 @@ class TestCase:
         write_text_atomic(_gpid_file, f"{proc.pid}\n")
 
         try:
-            proc.wait(args.timeout)
+            proc.wait(get_case_run_timeout(self.tags, args.timeout))
         except subprocess.TimeoutExpired:
             # Whether the test timed out will be decided later
             pass
@@ -4903,7 +4914,9 @@ def run_tests_array(
                     raise TimeoutError("Test execution timed out")
 
                 signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(int(args.timeout * 1.1) + 60)
+                signal.alarm(
+                    int(get_case_run_timeout(test_case.tags, args.timeout) * 1.1) + 60
+                )
                 test_result = None
                 try:
                     test_result = test_case.run(args, test_suite, client_options)

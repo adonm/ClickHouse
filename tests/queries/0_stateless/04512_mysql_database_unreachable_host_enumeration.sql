@@ -1,7 +1,11 @@
--- Tags: no-fasttest, no-parallel:remote-databases
+-- Tags: no-fasttest, no-parallel
 -- Tag no-fasttest: depends on libmysql (MySQL database engine), which is not built in fast test.
--- Tag no-parallel: attaches a MySQL database pointing at an unreachable host; grouped with
---   the other remote-database attachers (see `04210_show_remote_databases_in_system_tables`).
+-- Tag no-parallel: attaches a MySQL database pointing at an unreachable host. While it exists,
+--   any concurrent query that enumerates databases (`system.tables` / `system.columns` scans,
+--   completion suggestions, unknown-table-name hints) triggers connection attempts whose
+--   `mysqlxx::Pool` Error-level log lines are attributed to that query and forwarded to its
+--   client, failing unrelated tests with "having stderror". A concurrency group is not enough:
+--   the victims are arbitrary tests outside any group.
 
 SET send_logs_level = 'fatal';
 
