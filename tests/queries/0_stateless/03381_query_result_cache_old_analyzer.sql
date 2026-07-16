@@ -3,7 +3,7 @@ SET query_cache_tag = '03381_query_result_cache_old_analyzer';
 
 SYSTEM CLEAR QUERY CACHE TAG '03381_query_result_cache_old_analyzer';
 
--- Subquery caching is only supported with the new analyzer.
+-- Subquery caching is only supported with the analyzer.
 -- With the old analyzer, no subquery cache entries should be created.
 
 SET enable_analyzer = 0;
