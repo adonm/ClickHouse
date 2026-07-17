@@ -1,4 +1,6 @@
 -- Tags: no-parallel
+-- Tag no-parallel: uses `SYSTEM UNLOAD DICTIONARIES`, which unloads every dictionary on the
+--   server and would disturb concurrent tests that assert their dictionaries' load status
 
 DROP DICTIONARY IF EXISTS test_unload_dict;
 DROP TABLE IF EXISTS test_unload_source;
