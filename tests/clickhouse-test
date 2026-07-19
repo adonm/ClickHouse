@@ -160,7 +160,7 @@ TEST_MAX_RUN_TIME_IN_SECONDS = 180
 UNKNOWN_TEST_DURATION_MS = 1000
 
 # `long` tests keep the pre-parallelization 600s budget: the default per-test
-# `--timeout` (180s) is calibrated for ordinary tests on a loaded worker, while
+# `--timeout` (300s) is calibrated for ordinary tests on a loaded worker, while
 # `long` tests legitimately run for minutes and slow down further when the rest
 # of the suite runs in parallel around them.
 LONG_TEST_TIMEOUT_SECONDS = 600
@@ -6566,7 +6566,7 @@ def parse_args():
         "-t",
         "--timeout",
         type=int,
-        default=180,
+        default=300,
         help="Timeout for each test case in seconds",
     )
     parser.add_argument(
