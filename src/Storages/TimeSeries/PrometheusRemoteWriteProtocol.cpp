@@ -21,6 +21,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
@@ -637,6 +638,8 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(StoragePtr time_ser
     , time_series_storage(storagePtrToTimeSeries(time_series_storage_))
     , log(getLogger("PrometheusRemoteWriteProtocol"))
 {
+    /// Fail close: a server must not write into a table created by a newer version of ClickHouse.
+    checkTimeSeriesVersionIsKnown(*time_series_storage);
 }
 
 PrometheusRemoteWriteProtocol::~PrometheusRemoteWriteProtocol() = default;
