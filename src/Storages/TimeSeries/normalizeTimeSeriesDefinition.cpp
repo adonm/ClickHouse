@@ -33,6 +33,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <unordered_set>
 
 
@@ -46,12 +47,14 @@ namespace TimeSeriesSetting
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
     extern const TimeSeriesSettingsMap tags_to_columns;
     extern const TimeSeriesSettingsBool use_all_tags_column_to_generate_id;
+    extern const TimeSeriesSettingsUInt64 version;
 }
 
 namespace ErrorCodes
 {
     extern const int BAD_TYPE_OF_FIELD;
     extern const int INCORRECT_QUERY;
+    extern const int INVALID_SETTING_VALUE;
     extern const int THERE_IS_NO_COLUMN;
     extern const int UNKNOWN_TABLE;
 }
@@ -728,6 +731,57 @@ namespace
         storage.settings->changes.push_back(SettingChange{"allow_dimensions_outside_sorting_key", Field(static_cast<UInt64>(1))});
     }
 
+    /// Stamps the latest schema version into the CREATE query of a new table, so that the version is persisted
+    /// in the table metadata, or validates the version if it's specified in the query already.
+    /// The version can be present in the query not only when the user specifies it explicitly:
+    /// the `AS other_table` clause copies the settings of another table, and a replica of a Replicated database
+    /// executes CREATE queries prepared by another server (`SECONDARY_CREATE`).
+    void setOrCheckVersion(ASTCreateQuery & create_query, TimeSeriesSettings & time_series_settings, LoadingStrictnessLevel mode)
+    {
+        StorageID table_id{create_query.getDatabase(), create_query.getTable()};
+
+        if (time_series_settings[TimeSeriesSetting::version].isChanged())
+        {
+            UInt64 version = time_series_settings[TimeSeriesSetting::version];
+
+            if (version > TimeSeriesVersion::LATEST)
+                throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                    "{}: Cannot create a TimeSeries table with version {} which is newer than the latest version {} "
+                    "known to this server. Please upgrade ClickHouse",
+                    table_id.getNameForLogs(), version, TimeSeriesVersion::LATEST);
+
+            /// Replaying a CREATE query prepared by another server (`SECONDARY_CREATE`) is allowed to keep
+            /// an older version, but a new table can be created with the latest version only.
+            if ((mode == LoadingStrictnessLevel::CREATE) && (version != TimeSeriesVersion::LATEST))
+                throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                    "{}: Cannot create a TimeSeries table with version {}: this server creates TimeSeries tables "
+                    "with version {}. The `version` setting is stamped automatically when a table is created, "
+                    "omit it in the CREATE query",
+                    table_id.getNameForLogs(), version, TimeSeriesVersion::LATEST);
+
+            return;
+        }
+
+        /// `SECONDARY_CREATE` without a version in the query means the query was prepared by a server which
+        /// didn't support versioning yet; keep the setting unset so that the table resolves to the default
+        /// (initial) version, the same as on the server which prepared the query.
+        if (mode != LoadingStrictnessLevel::CREATE)
+            return;
+
+        if (!create_query.storage)
+            create_query.set(create_query.storage, make_intrusive<ASTStorage>());
+
+        if (!create_query.storage->settings)
+        {
+            auto settings_ast = make_intrusive<ASTSetQuery>();
+            settings_ast->is_standalone = false;
+            create_query.storage->set(create_query.storage->settings, settings_ast);
+        }
+
+        create_query.storage->settings->changes.push_back(SettingChange{"version", Field{TimeSeriesVersion::LATEST}});
+        time_series_settings[TimeSeriesSetting::version] = TimeSeriesVersion::LATEST;
+    }
+
     /// Makes the definition of the default engine for an inner table.
     boost::intrusive_ptr<ASTStorage> generateInnerEngine(ViewTarget::Kind target_kind, const TimeSeriesSettings & settings)
     {
@@ -1037,6 +1091,8 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
         TimeSeriesSettings settings;
         if (create_query.storage)
             settings.loadFromQuery(*create_query.storage);
+
+        setOrCheckVersion(create_query, settings, mode);
         checkTimeSeriesSettings(settings);
 
         for (auto kind : getTargetKinds())

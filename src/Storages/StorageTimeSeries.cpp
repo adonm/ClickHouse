@@ -13,6 +13,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTRenameQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
@@ -33,6 +34,11 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_time_series_table;
+}
+
+namespace TimeSeriesSetting
+{
+    extern const TimeSeriesSettingsUInt64 version;
 }
 
 namespace ErrorCodes
@@ -143,6 +149,15 @@ StorageTimeSeries::StorageTimeSeries(
 
     StorageInMemoryMetadata storage_metadata;
 
+    /// Keep the settings from the create query in the metadata: `alter` rebuilds the stored SETTINGS clause
+    /// from the metadata, so without this the settings not affected by an ALTER query (including the `version`
+    /// setting stamped at creation) would be dropped from the stored table definition.
+    if (normalized_create_query->storage && normalized_create_query->storage->settings
+        && !normalized_create_query->storage->settings->changes.empty())
+    {
+        storage_metadata.setSettingsChanges(normalized_create_query->storage->settings->clone());
+    }
+
     /// Re-derive columns from the normalized AST rather than trusting the `columns` argument.
     /// For CREATE / RESTORE the query arrives already normalized.
     /// However for ATTACH InterpreterCreateQuery doesn't normalize the create query,
@@ -155,6 +170,12 @@ StorageTimeSeries::StorageTimeSeries(
         storage_metadata.setComment(comment);
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+
+UInt64 StorageTimeSeries::getVersion() const
+{
+    return (*storage_settings.get())[TimeSeriesSetting::version];
 }
 
 
@@ -849,6 +870,7 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
+SETTINGS version = 1
 SAMPLES INNER COLUMNS
 (
     `id` UUID,
@@ -877,7 +899,8 @@ METRICS INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
 ```
 
 So the columns were generated automatically and also there are three inner target tables with their own column definitions
-stored in the `INNER COLUMNS` clauses.
+stored in the `INNER COLUMNS` clauses. Also the latest schema version was stamped into the `version` setting
+(see [Schema versioning](#schema-versioning)).
 
 Inner target tables have names like `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
 `.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
@@ -1051,7 +1074,8 @@ ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
 
 Note that changing `id_generator` while data is already in the tags table can produce different IDs for the same metric+tag combination — old rows keep their old IDs, new rows use the new generator.
 
-The other settings can't be changed with `ALTER ... MODIFY SETTING` because they are baked into the schema of the inner tables at `CREATE` time.
+The other settings can't be changed with `ALTER ... MODIFY SETTING`: most of them are baked into the schema of the inner tables at `CREATE` time,
+and the `version` setting is stamped automatically at `CREATE` time and identifies the schema itself (see [Schema versioning](#schema-versioning)).
 
 ## Settings {#settings}
 
@@ -1065,6 +1089,29 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `store_min_time_and_max_time` | Bool | true | If set to true then the table will store `min_time` and `max_time` for each time series |
 | `aggregate_min_time_and_max_time` | Bool | true | When creating an inner target `tags` table, this flag enables using `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` instead of just `Nullable(DateTime64(3))` as the type of the `min_time` column, and the same for the `max_time` column |
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
+| `version` | UInt64 | 1 | The version of the table: it identifies the set of the target tables and their structure. The version is stamped automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
+
+## Schema versioning {#schema-versioning}
+
+The `TimeSeries` table engine and the PromQL execution layer are under active development:
+the set of the target tables and their structure can change between ClickHouse versions.
+To make such changes detectable, every `TimeSeries` table stores its version in the [version](#settings) setting.
+The version is stamped automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 1) -
+persists in the table metadata, and can't be changed by `ALTER`. Tables created before the setting was introduced resolve to version 1.
+Creating a table with an explicit `version` other than the latest one is not allowed: normally the setting should just be omitted in the `CREATE TABLE` query.
+
+The PromQL execution layer - the [prometheusQuery](../../../sql-reference/table-functions/prometheusQuery.md),
+[prometheusQueryRange](../../../sql-reference/table-functions/prometheusQueryRange.md),
+and [timeSeriesSelector](../../../sql-reference/table-functions/timeSeriesSelector.md) table functions,
+the `promql` dialect, and the Prometheus HTTP query API (`/api/v1/query`, `/api/v1/query_range`) -
+targets only the latest schema instead of supporting all the historical ones, so it works with a limited range of versions:
+
+- If a `TimeSeries` table has a version which is too old for the PromQL layer (which is possible after a ClickHouse upgrade),
+  queries over it are rejected with an exception asking to re-create the table:
+  create a new `TimeSeries` table, copy the data with an `INSERT ... SELECT` query from the old table into the new one,
+  and then replace the old table with the new one.
+- If a `TimeSeries` table has a version newer than the latest version known to the server (which is possible after a ClickHouse downgrade),
+  queries over it are rejected with an exception asking to upgrade ClickHouse.
 
 # Functions {#functions}
 

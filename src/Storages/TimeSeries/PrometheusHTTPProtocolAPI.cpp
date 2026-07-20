@@ -10,6 +10,7 @@
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
@@ -41,6 +42,7 @@ PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series
     , time_series_storage(storagePtrToTimeSeries(time_series_storage_))
     , log(getLogger("PrometheusHTTPProtocolAPI"))
 {
+    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
 }
 
 PrometheusHTTPProtocolAPI::~PrometheusHTTPProtocolAPI() = default;
