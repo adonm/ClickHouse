@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-object-storage, no-random-settings, no-replicated-database
+# Tags: no-fasttest, no-object-storage, no-random-settings, no-replicated-database, no-parallel:filesystem-cache
+# Tag no-parallel: cache hit and miss assertions must not overlap tests that
+# clear or heavily mutate the process-wide filesystem-cache registry.
 
 # set -x
 

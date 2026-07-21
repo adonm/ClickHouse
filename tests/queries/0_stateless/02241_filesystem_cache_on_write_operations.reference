@@ -11,6 +11,7 @@ SELECT file_segment_range_begin, file_segment_range_end, size, state
         (
             SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
             FROM system.remote_data_paths
+            WHERE _database = currentDatabase() AND _table = 'test_02241'
         ) AS data_paths
         INNER JOIN
             system.filesystem_cache AS caches
@@ -19,7 +20,7 @@ SELECT file_segment_range_begin, file_segment_range_end, size, state
     )
     WHERE endsWith(local_path, 'data.bin')
     FORMAT Vertical
-SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '__tmp_internal'
+SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths WHERE _database = currentDatabase() AND _table = 'test_02241') AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '__tmp_internal'
 0
 SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '__tmp_internal'
 0	0
@@ -32,6 +33,7 @@ SELECT file_segment_range_begin, file_segment_range_end, size, state
         (
             SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
             FROM system.remote_data_paths
+            WHERE _database = currentDatabase() AND _table = 'test_02241'
         ) AS data_paths
         INNER JOIN
             system.filesystem_cache AS caches
@@ -46,7 +48,7 @@ file_segment_range_begin: 0
 file_segment_range_end:   745
 size:                     746
 state:                    DOWNLOADED
-SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '__tmp_internal'
+SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths WHERE _database = currentDatabase() AND _table = 'test_02241') AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '__tmp_internal'
 9
 SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '__tmp_internal'
 9	1217
@@ -68,6 +70,7 @@ SELECT file_segment_range_begin, file_segment_range_end, size, state
         (
             SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
             FROM system.remote_data_paths
+            WHERE _database = currentDatabase() AND _table = 'test_02241'
         ) AS data_paths
         INNER JOIN
             system.filesystem_cache AS caches
@@ -82,7 +85,7 @@ file_segment_range_begin: 0
 file_segment_range_end:   1659
 size:                     1660
 state:                    DOWNLOADED
-SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '__tmp_internal'
+SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths WHERE _database = currentDatabase() AND _table = 'test_02241') AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '__tmp_internal'
 9
 SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '__tmp_internal'
 9	2131
@@ -122,6 +125,7 @@ SELECT file_segment_range_begin, file_segment_range_end, size, state
         (
             SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
             FROM system.remote_data_paths
+            WHERE _database = currentDatabase() AND _table = 'test_02241'
         ) AS data_paths
         INNER JOIN
             system.filesystem_cache AS caches
@@ -130,7 +134,7 @@ SELECT file_segment_range_begin, file_segment_range_end, size, state
     )
     WHERE endsWith(local_path, 'data.bin')
     FORMAT Vertical
-SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '__tmp_internal'
+SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths WHERE _database = currentDatabase() AND _table = 'test_02241') AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '__tmp_internal'
 0
 SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '__tmp_internal'
 0	0
@@ -143,6 +147,7 @@ SELECT file_segment_range_begin, file_segment_range_end, size, state
         (
             SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
             FROM system.remote_data_paths
+            WHERE _database = currentDatabase() AND _table = 'test_02241'
         ) AS data_paths
         INNER JOIN
             system.filesystem_cache AS caches
@@ -157,7 +162,7 @@ file_segment_range_begin: 0
 file_segment_range_end:   745
 size:                     746
 state:                    DOWNLOADED
-SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '__tmp_internal'
+SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths WHERE _database = currentDatabase() AND _table = 'test_02241') AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '__tmp_internal'
 9
 SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '__tmp_internal'
 9	1217
@@ -179,6 +184,7 @@ SELECT file_segment_range_begin, file_segment_range_end, size, state
         (
             SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
             FROM system.remote_data_paths
+            WHERE _database = currentDatabase() AND _table = 'test_02241'
         ) AS data_paths
         INNER JOIN
             system.filesystem_cache AS caches
@@ -193,7 +199,7 @@ file_segment_range_begin: 0
 file_segment_range_end:   1659
 size:                     1660
 state:                    DOWNLOADED
-SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '__tmp_internal'
+SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths WHERE _database = currentDatabase() AND _table = 'test_02241') AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '__tmp_internal'
 9
 SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '__tmp_internal'
 9	2131
@@ -233,6 +239,7 @@ SELECT file_segment_range_begin, file_segment_range_end, size, state
         (
             SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
             FROM system.remote_data_paths
+            WHERE _database = currentDatabase() AND _table = 'test_02241'
         ) AS data_paths
         INNER JOIN
             system.filesystem_cache AS caches
@@ -241,7 +248,7 @@ SELECT file_segment_range_begin, file_segment_range_end, size, state
     )
     WHERE endsWith(local_path, 'data.bin')
     FORMAT Vertical
-SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '__tmp_internal'
+SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths WHERE _database = currentDatabase() AND _table = 'test_02241') AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '__tmp_internal'
 0
 SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '__tmp_internal'
 0	0
@@ -254,6 +261,7 @@ SELECT file_segment_range_begin, file_segment_range_end, size, state
         (
             SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
             FROM system.remote_data_paths
+            WHERE _database = currentDatabase() AND _table = 'test_02241'
         ) AS data_paths
         INNER JOIN
             system.filesystem_cache AS caches
@@ -268,7 +276,7 @@ file_segment_range_begin: 0
 file_segment_range_end:   745
 size:                     746
 state:                    DOWNLOADED
-SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '__tmp_internal'
+SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths WHERE _database = currentDatabase() AND _table = 'test_02241') AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '__tmp_internal'
 9
 SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '__tmp_internal'
 9	1217
@@ -290,6 +298,7 @@ SELECT file_segment_range_begin, file_segment_range_end, size, state
         (
             SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
             FROM system.remote_data_paths
+            WHERE _database = currentDatabase() AND _table = 'test_02241'
         ) AS data_paths
         INNER JOIN
             system.filesystem_cache AS caches
@@ -304,7 +313,7 @@ file_segment_range_begin: 0
 file_segment_range_end:   1659
 size:                     1660
 state:                    DOWNLOADED
-SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '__tmp_internal'
+SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths WHERE _database = currentDatabase() AND _table = 'test_02241') AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '__tmp_internal'
 9
 SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '__tmp_internal'
 9	2131

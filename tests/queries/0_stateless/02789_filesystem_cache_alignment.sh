@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings, no-flaky-check, no-distributed-cache
+# Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings, no-flaky-check, no-distributed-cache, no-parallel:filesystem-cache
 # no-flaky-check: the test is long and timeouts because of thread-fuzzer
+# Tag no-parallel: serializes the cache-log snapshot and the subsequent assertion
+# against the process-wide `system.filesystem_cache` state.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

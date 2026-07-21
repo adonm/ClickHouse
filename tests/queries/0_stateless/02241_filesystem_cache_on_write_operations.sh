@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-object-storage, no-random-settings, no-flaky-check
+# Tags: long, no-fasttest, no-object-storage, no-random-settings, no-flaky-check, no-parallel:filesystem-cache
 # no-flaky-check: Too slow
+# Tag no-parallel: serializes tests that inspect or mutate filesystem-cache metadata;
+# this test repeatedly joins `system.remote_data_paths` to `system.filesystem_cache`.
 
 set -e
 
@@ -30,6 +32,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
         (
             SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
             FROM system.remote_data_paths
+            WHERE _database = currentDatabase() AND _table = 'test_02241'
         ) AS data_paths
         INNER JOIN
             system.filesystem_cache AS caches
@@ -39,7 +42,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
     WHERE endsWith(local_path, 'data.bin')
     FORMAT Vertical"
 
-    $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '$cache_name'"
+    $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths WHERE _database = currentDatabase() AND _table = 'test_02241') AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '$cache_name'"
     $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
     $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100)"
@@ -52,6 +55,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
         (
             SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
             FROM system.remote_data_paths
+            WHERE _database = currentDatabase() AND _table = 'test_02241'
         ) AS data_paths
         INNER JOIN
             system.filesystem_cache AS caches
@@ -61,7 +65,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
     WHERE endsWith(local_path, 'data.bin')
     FORMAT Vertical"
 
-    $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '$cache_name'"
+    $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths WHERE _database = currentDatabase() AND _table = 'test_02241') AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '$cache_name'"
     $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
     $CLICKHOUSE_CLIENT --echo --query "SELECT * FROM test_02241 FORMAT Null"
@@ -85,6 +89,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
         (
             SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
             FROM system.remote_data_paths
+            WHERE _database = currentDatabase() AND _table = 'test_02241'
         ) AS data_paths
         INNER JOIN
             system.filesystem_cache AS caches
@@ -94,7 +99,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
     WHERE endsWith(local_path, 'data.bin')
     FORMAT Vertical;"
 
-    $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '$cache_name'"
+    $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths WHERE _database = currentDatabase() AND _table = 'test_02241') AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '$cache_name'"
     $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
     $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
