@@ -271,7 +271,7 @@ def main():
     is_distributed_plan = False
     runner_options = ""
     # optimal value for most of the jobs
-    nproc = int(Utils.cpu_count() * 0.8)
+    nproc = min(Utils.cpu_count(), 18)
     info = Info()
 
     for to in test_options:
