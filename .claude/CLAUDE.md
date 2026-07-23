@@ -142,6 +142,8 @@ You can run integration tests as in `tests/integration/README.md` using: `python
 
 When writing tests, do not add "no-*" tags (like "no-parallel") unless strictly necessarily.
 
+Never add a test with a `no-parallel` tag and then try to make it parallel at any cost. Add the `no-parallel` tag only if explicitly asked. When you do add it, document the reason with a comment in the format `# Tag no-parallel: {comment}` (or `-- Tag no-parallel: {comment}` for `.sql` tests) — this is required by the `various` style check in CI.
+
 When writing tests in tests/queries, prefer adding a new test instead of extending existing ones.
 
 When adding a new test, use `./tests/queries/0_stateless/add-test <name>` for `.sql` tests or `./tests/queries/0_stateless/add-test <name>.sh` for `.sh` tests. It assigns the next available number prefix and creates both the test and reference files.
