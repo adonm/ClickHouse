@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
+# Tags: no-parallel, no-replicated-database
+# Tag no-parallel: arms a global, server-wide merge/lightweight-update sleep failpoint that a concurrent test could consume, causing flaky merges
 # no-replicated-database: failpoint is enabled only on one replica.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
