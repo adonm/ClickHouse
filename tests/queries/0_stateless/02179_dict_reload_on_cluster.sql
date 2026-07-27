@@ -1,5 +1,7 @@
--- Tags: no-flaky-check, no-parallel:xml-entities
--- Tag no-parallel: serializes tests that mutate or assert the shared `xml-entities` resource
+-- Tags: no-flaky-check, no-parallel
+-- Tag no-parallel: runs global `SYSTEM RELOAD DICTIONARIES ON CLUSTER` (reloads every server
+-- dictionary) and asserts an exact reload count; a concurrent global reload breaks it, so it
+-- must run fully sequentially
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
