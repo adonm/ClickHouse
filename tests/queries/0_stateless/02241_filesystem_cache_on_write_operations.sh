@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-object-storage, no-random-settings, no-flaky-check, no-parallel
+# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings, no-flaky-check
 # no-flaky-check: Too slow
 # Tag no-parallel: asserts exact counts over the global `system.filesystem_cache` /
 # `system.remote_data_paths` views; any concurrent test that creates an anonymous
-# `disk(type='cache', ...)` (named `__tmp_internal_*`) pollutes these views, so the
-# `filesystem-cache` group is not enough - it must run fully sequentially.
+# `disk(type='cache', ...)` (named `__tmp_internal_*`) pollutes them, so it must run sequentially
 
 set -e
 
@@ -34,7 +33,6 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
         (
             SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
             FROM system.remote_data_paths
-            WHERE _database = currentDatabase() AND _table = 'test_02241'
         ) AS data_paths
         INNER JOIN
             system.filesystem_cache AS caches
@@ -44,7 +42,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
     WHERE endsWith(local_path, 'data.bin')
     FORMAT Vertical"
 
-    $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths WHERE _database = currentDatabase() AND _table = 'test_02241') AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '$cache_name'"
+    $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '$cache_name'"
     $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
     $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100)"
@@ -57,7 +55,6 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
         (
             SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
             FROM system.remote_data_paths
-            WHERE _database = currentDatabase() AND _table = 'test_02241'
         ) AS data_paths
         INNER JOIN
             system.filesystem_cache AS caches
@@ -67,7 +64,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
     WHERE endsWith(local_path, 'data.bin')
     FORMAT Vertical"
 
-    $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths WHERE _database = currentDatabase() AND _table = 'test_02241') AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '$cache_name'"
+    $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '$cache_name'"
     $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
     $CLICKHOUSE_CLIENT --echo --query "SELECT * FROM test_02241 FORMAT Null"
@@ -91,7 +88,6 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
         (
             SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path
             FROM system.remote_data_paths
-            WHERE _database = currentDatabase() AND _table = 'test_02241'
         ) AS data_paths
         INNER JOIN
             system.filesystem_cache AS caches
@@ -101,7 +97,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
     WHERE endsWith(local_path, 'data.bin')
     FORMAT Vertical;"
 
-    $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths WHERE _database = currentDatabase() AND _table = 'test_02241') AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '$cache_name'"
+    $CLICKHOUSE_CLIENT --echo --query "SELECT count() FROM (SELECT arrayJoin(cache_paths) AS cache_path, local_path, remote_path FROM system.remote_data_paths ) AS data_paths INNER JOIN system.filesystem_cache AS caches ON data_paths.cache_path = caches.cache_path WHERE caches.cache_name = '$cache_name'"
     $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
     $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
@@ -120,7 +116,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
 
     $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --mutations_sync=2 --query "ALTER TABLE test_02241 UPDATE value = 'kek' WHERE key = 100"
     $CLICKHOUSE_CLIENT --echo --query "SELECT count(), sum(size) FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
-    $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(2100000)"
+    $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(5000000)"
 
     $CLICKHOUSE_CLIENT --echo --query "SYSTEM FLUSH LOGS query_log"
 
@@ -130,7 +126,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
         system.query_log
     WHERE
         event_date >= yesterday() AND event_time >= now() - 600
-        AND query LIKE '%SELECT number, toString(number) FROM numbers(2100000)%'
+        AND query LIKE '%SELECT number, toString(number) FROM numbers(5000000)%'
         AND type = 'QueryFinish'
         AND current_database = currentDatabase()
     ORDER BY
