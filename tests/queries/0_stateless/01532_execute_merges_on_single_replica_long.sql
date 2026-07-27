@@ -1,4 +1,7 @@
--- Tags: long, replica, no-replicated-database, no-object-storage
+-- Tags: long, replica, no-replicated-database, no-object-storage, no-parallel
+-- Tag no-parallel: uses a fixed (non-`{database}`) ZooKeeper path, so overlapping runs - e.g. the
+-- targeted/flaky-check re-runs of this test - register a second replica at the same path while the
+-- previous one is still shutting down and hit `TABLE_IS_READ_ONLY`; it must run fully sequentially
 -- Tag no-replicated-database: Fails due to additional replicas or shards
 
 DROP TABLE IF EXISTS execute_on_single_replica_r1 SYNC;
@@ -7,8 +10,8 @@ DROP TABLE IF EXISTS execute_on_single_replica_r2 SYNC;
 /* This test requires a fixed zookeeper path, so we cannot use ReplicatedMergeTree({database}):
    the replica that executes a merge is picked by hash(zookeeper_path + part_name), and the
    reference asserts which replica merges each part. A random database name in the path would
-   randomize the assignment. The path is unique to this test and the flaky check serializes
-   copies of one test (`--no-self-parallel`), so it is still parallel-safe. */
+   randomize the assignment. Because the path is fixed, the test is tagged `no-parallel` so no
+   other run of it can register a replica at the same path concurrently. */
 CREATE TABLE execute_on_single_replica_r1 (x UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test_01532/execute_on_single_replica', 'r1') ORDER BY tuple() SETTINGS execute_merges_on_single_replica_time_threshold=10;
 CREATE TABLE execute_on_single_replica_r2 (x UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test_01532/execute_on_single_replica', 'r2') ORDER BY tuple() SETTINGS execute_merges_on_single_replica_time_threshold=10;
 
