@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-object-storage, no-random-settings, no-flaky-check, no-parallel:filesystem-cache
+# Tags: long, no-fasttest, no-object-storage, no-random-settings, no-flaky-check, no-parallel
 # no-flaky-check: Too slow
-# Tag no-parallel: serializes tests that inspect or mutate filesystem-cache metadata;
-# this test repeatedly joins `system.remote_data_paths` to `system.filesystem_cache`.
+# Tag no-parallel: asserts exact counts over the global `system.filesystem_cache` /
+# `system.remote_data_paths` views; any concurrent test that creates an anonymous
+# `disk(type='cache', ...)` (named `__tmp_internal_*`) pollutes these views, so the
+# `filesystem-cache` group is not enough - it must run fully sequentially.
 
 set -e
 
