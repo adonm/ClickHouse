@@ -52,11 +52,6 @@ from typing import Dict, List, Optional, Set, Tuple, Union
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 sys.path.append(str(REPOSITORY_ROOT))
-from ci.jobs.scripts.functional_test_batching import (  # noqa: E402
-    load_test_durations,
-    selected_test_batch,
-    source_test_name,
-)
 
 try:
     import termcolor  # type: ignore
@@ -157,7 +152,6 @@ TEST_FILE_EXTENSIONS = [".sql", ".sql.j2", ".sh", ".py", ".expect"]
 VERSION_PATTERN = r"^((\d+\.)?(\d+\.)?(\d+\.)?\d+)$"
 
 TEST_MAX_RUN_TIME_IN_SECONDS = 180
-UNKNOWN_TEST_DURATION_MS = 1000
 
 # `long` tests keep the pre-parallelization 600s budget: the default per-test
 # `--timeout` (300s) is calibrated for ordinary tests on a loaded worker, while
@@ -4385,37 +4379,10 @@ class TestSuite:
                     f"Incorrect run by hash: batch {args.run_by_hash_num}, total {args.run_by_hash_total}"
                 )
 
-            source_tests = [
-                name
-                for name in os.listdir(self.suite_path)
-                if is_test_from_dir(self.suite_path, name)
-                and not (USE_JINJA and name.endswith(".gen.sql"))
-                and (
-                    not self.args.test
-                    or any(re.search(pattern, name) for pattern in self.args.test)
-                )
-            ]
-            sequential_only = None
-            if args.no_parallel:
-                sequential_only = True
-            elif args.no_sequential:
-                sequential_only = False
-            build_family = (
-                "sanitizer"
-                if any(flag in BuildFlags.SANITIZERS for flag in args.build_flags)
-                else "default"
-            )
-            batch = selected_test_batch(
-                Path(self.suite_path),
-                source_tests,
-                args.run_by_hash_num,
-                args.run_by_hash_total,
-                build_family,
-                sequential_only,
-            )
-
             def filter_func(x: str) -> bool:
-                return x in batch
+                return bool(
+                    stringhash(x) % args.run_by_hash_total == args.run_by_hash_num
+                )
 
         else:
 
@@ -4431,16 +4398,6 @@ class TestSuite:
         self.all_tags: Dict[str, Set[str]] = all_tags_and_random_settings_limits[0]
         self.all_random_settings_limits: Dict[str, Dict[str, (int, int)]] = (all_tags_and_random_settings_limits[1])
         self.all_memory_limits: Dict[str, int] = (all_tags_and_random_settings_limits[2])
-        build_family = (
-            "sanitizer"
-            if any(flag in BuildFlags.SANITIZERS for flag in args.build_flags)
-            else "default"
-        )
-        durations = load_test_durations(build_family)
-        self.test_durations = {
-            test_name: durations.get(source_test_name(test_name), 0)
-            for test_name in all_tests
-        }
         self.parallel_groups = {
             test_name: group
             for test_name, tags in self.all_tags.items()
@@ -5560,15 +5517,10 @@ def do_run_tests(
         # of failures will be nearly the same for all tests from the group.
         # TODO: add shuffle for sequential tests
         if jobs > 1:
-            group_priorities = {}
-            for test_name in test_suite.parallel_tests:
-                group = test_suite.get_parallel_group(test_name)
-                if group is not None:
-                    group_priorities[group] = group_priorities.get(group, 0) + (
-                        test_suite.test_durations.get(test_name, 0)
-                        or UNKNOWN_TEST_DURATION_MS
-                    )
-
+            # Shuffle whole serialization keys rather than individual tests: every
+            # member of one `no-parallel:<group>` gets the same key, so a stable sort
+            # keeps the group's members next to each other and in their original
+            # order, while the groups and the ungrouped tests are shuffled as units.
             serialization_keys = {
                 test_name: (
                     f"group:{group}"
@@ -5580,21 +5532,8 @@ def do_run_tests(
             random_order = {
                 key: random.random() for key in set(serialization_keys.values())
             }
-
-            def scheduling_priority(test_name):
-                # Every member of one group gets the same key. Python's stable
-                # sort therefore keeps the group's original serial order while
-                # prioritizing groups by their total predicted runtime.
-                group = test_suite.get_parallel_group(test_name)
-                duration = (
-                    group_priorities[group]
-                    if group is not None
-                    else test_suite.test_durations.get(test_name, 0)
-                )
-                return -duration, random_order[serialization_keys[test_name]]
-
             test_suite.parallel_tests.sort(
-                key=scheduling_priority
+                key=lambda test_name: random_order[serialization_keys[test_name]]
             )
 
         workers_to_shed = multiprocessing.Value('i', 0)

@@ -12,10 +12,6 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
 from ci.praktika.utils import Shell
-from ci.jobs.scripts.functional_test_batching import (
-    assign_test_batches,
-    load_test_durations,
-)
 
 # Query to fetch failed tests from CIDB for a given PR.
 # Pre-filters out commit/check_name combinations with >= 20 failures — these indicate
@@ -266,36 +262,6 @@ class Targeting:
         except OSError:
             return False
         return False
-
-    @classmethod
-    def functional_test_batch_index(
-        cls,
-        test_source_file: str,
-        total_batches: int,
-        sequential_only: bool | None,
-        build_family: str = "default",
-    ) -> int:
-        test_dir = Path("tests/queries/0_stateless")
-        candidates = []
-        for path in sorted(test_dir.iterdir()):
-            if not path.is_file() or not path.name.endswith(cls._TEST_FILE_EXTENSIONS):
-                continue
-            if path.name.endswith(".gen.sql"):
-                continue
-            sequential = cls.is_sequential_functional_test(path.name)
-            if sequential_only is not None and sequential != sequential_only:
-                continue
-            candidates.append(path.name)
-
-        batches = assign_test_batches(
-            candidates,
-            total_batches,
-            load_test_durations(build_family),
-        )
-        for index, batch in enumerate(batches):
-            if test_source_file in batch:
-                return index
-        raise ValueError(f"Functional test is not assigned to a batch: {test_source_file}")
 
     def get_changed_tests(self):
         # TODO: add support for integration tests

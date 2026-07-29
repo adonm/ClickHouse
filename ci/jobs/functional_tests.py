@@ -3,6 +3,7 @@ import json
 import os
 import random
 import subprocess
+import zlib
 from pathlib import Path
 
 from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
@@ -461,18 +462,7 @@ def main():
                 and batch_num
                 and total_batches > 1
                 and not any(
-                    Targeting.functional_test_batch_index(
-                        f,
-                        total_batches,
-                        True if is_sequential_flavor else False if is_parallel_flavor else None,
-                        "sanitizer"
-                        if any(
-                            sanitizer in args.options
-                            for sanitizer in ("asan", "msan", "tsan", "ubsan")
-                        )
-                        else "default",
-                    )
-                    == batch_num - 1
+                    zlib.crc32(f.encode("utf-8")) % total_batches == batch_num - 1
                     for f in hash_batch_files
                 )
             ):
