@@ -29,17 +29,27 @@ INSERT INTO tab
 SELECT rand(), toString(number), number
 FROM numbers(1_000_000);
 
+-- The query condition cache is process-wide and size-limited, so a concurrently running test
+-- can evict this test's entries and make `count()` of the live cache report fewer entries than
+-- were written. Accumulate every entry ever observed for this table and assert over that union.
+DROP TABLE IF EXISTS qcc_seen;
+CREATE TABLE qcc_seen (key_hash UInt128) ENGINE = Memory;
 SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
-SELECT count() FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
+INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
+SELECT uniqExact(key_hash) FROM qcc_seen;
 
 SELECT '--- Same COLLATE locale re-runs reuse the same QCC entry';
 SELECT s FROM tab WHERE v = 10000 ORDER BY s ASC COLLATE 'en_US' LIMIT 5 FORMAT Null;
-SELECT count() FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
+INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
+SELECT uniqExact(key_hash) FROM qcc_seen;
 SELECT s FROM tab WHERE v = 10000 ORDER BY s ASC COLLATE 'en_US' LIMIT 5 FORMAT Null;
-SELECT count() FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
+INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
+SELECT uniqExact(key_hash) FROM qcc_seen;
 
 SELECT '--- Different COLLATE locale writes a separate entry';
 SELECT s FROM tab WHERE v = 10000 ORDER BY s ASC COLLATE 'fr' LIMIT 5 FORMAT Null;
-SELECT count() FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
+INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
+SELECT uniqExact(key_hash) FROM qcc_seen;
 
 DROP TABLE tab;
+DROP TABLE qcc_seen;
