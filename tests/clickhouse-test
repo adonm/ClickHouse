@@ -4300,7 +4300,10 @@ class TestSuite:
                 except UnicodeDecodeError:
                     # The content cannot be inspected, so assume the worst and keep
                     # the per-test global entity leak check enabled for this test.
-                    return [GLOBAL_ENTITY_DDL_TAG], {}, None
+                    # This must be a set: `TestCase` adds `GLOBAL_TAGS` to whatever
+                    # is stored here, and the empty container the caller substitutes
+                    # for a falsy value would hide a wrong type.
+                    return {GLOBAL_ENTITY_DDL_TAG}, {}, None
                 try:
                     if filepath.endswith(".sql"):
                         for line in lines:
