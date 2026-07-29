@@ -1,14 +1,15 @@
 -- Tags: no-fasttest, no-object-storage, no-random-settings
-
 -- The subject of this test is that a read larger than `bypass_cache_threshold` is not cached.
 -- The first read also caches one sub-threshold segment (80 bytes, the marks of the compact part),
 -- which is the other half of the same behaviour and is asserted below.
---
 -- The assertion after the *second* read must not depend on whether that sub-threshold segment
 -- reappears: it only stays absent while the marks are still resident in the process-wide mark
 -- cache, and concurrently running tests evict them, after which the marks are re-read from disk
 -- and cached again. So that one assertion is restricted to above-threshold segments, which is
 -- what the test is actually about.
+-- These lines must stay directly below the `Tags:` line with no blank line in between:
+-- `getTestTagsLength` only strips a contiguous run of comments starting there, and anything it
+-- does not strip is echoed by `-- { echo }` into the output that is compared to the reference.
 
 -- { echo }
 
