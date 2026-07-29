@@ -207,7 +207,10 @@ for test_case in "${tests_with_global_cache_drop[@]}"; do
     grep -qP '(?:[Tt]ags:\s*|,\s*)no-parallel(?::[a-z0-9-]+)?(?=\s*(?:,|$))' "$test_case" || echo "Test with a global SYSTEM cache clear should have a no-parallel tag: $test_case"
 done
 
-allowed_no_parallel_groups='mark-cache|primary-index-cache|filesystem-cache|query-condition-cache|metadata-caches|misc-caches|xml-entities|stateful|remote-databases'
+# Keep in sync with NO_PARALLEL_GROUPS in tests/clickhouse-test: a group this check
+# accepts but the runner does not know makes `clickhouse-test` raise while it builds
+# the suite, which is a much worse way to find out about a typo.
+allowed_no_parallel_groups='mark-cache|primary-index-cache|filesystem-cache|query-condition-cache|metadata-caches|misc-caches|xml-entities|stateful'
 tests_with_no_parallel_group=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
         xargs grep -lP '(--|#)\s*[Tt]ags:.*no-parallel:' |
