@@ -150,12 +150,6 @@ When removing a feature, do not write tests asserting that the feature no longer
 
 When adding a new test, use `./tests/queries/0_stateless/add-test <name>` for `.sql` tests or `./tests/queries/0_stateless/add-test <name>.sh` for `.sh` tests. It assigns the next available number prefix and creates both the test and reference files.
 
-In a `.sql` test that uses `-- { echo }`, keep any explanatory comment block directly below the `-- Tags:` line with no blank line in between. `getTestTagsLength` (`src/Client/TestTags.cpp`) strips only a contiguous run of `--` comments starting at the `Tags:` line, and `-- { echo }` echoes the first query together with every comment preceding it since the last statement, so a comment placed after a blank line is printed into the output and the test then fails its diff on the very first line. Region-based `-- { echoOn }` / `-- { echoOff }` does not have this problem, and neither does a comment that has a statement between it and the marker.
-
-Query parameters such as `{CLICKHOUSE_TEST_UNIQUE_NAME:String}` are only accepted in expression positions, for example a `WHERE` clause. They do not work as the value of a `SETTINGS` clause (so they cannot name an inline `disk(...)`), nor as the argument of `SYSTEM CLEAR FILESYSTEM CACHE '<name>'` or `SYSTEM ... TAG`. When a test needs a per-run unique name in one of those positions, it has to be a `.sh` test that interpolates `$CLICKHOUSE_TEST_UNIQUE_NAME`.
-
-A test must not assert an exact hit, entry count, or "nothing was cached" outcome against a process-wide, size-limited cache — the query cache, the query condition cache, the mark cache and the filesystem cache all qualify. Once the test runs in parallel, a concurrent test can evict its entries at any point, so a cache hit turns into a miss and a count comes out low. Assert something eviction-tolerant instead: accumulate the observed entries into a per-test `Memory` table and assert over that union, repeat the query and assert that a hit happened at least once, filter to the property the test is really about, or use per-query `ProfileEvents` from `system.query_log`. Watch for indirect dependencies too: a test asserting that a second read caches nothing may only pass because the marks were still resident in the mark cache.
-
 When writing C++ code, always use Allman-style braces (opening brace on a new line). This is enforced by the style check in CI.
 
 Never use sleep in C++ code to fix race conditions - this is stupid and not acceptable!
@@ -165,12 +159,6 @@ Avoid fallback paths. When an operation fails, prefer letting the error propagat
 When writing messages, say ASan, not ASAN, and similar (because there are two words: Address Sanitizer).
 
 When checking the CI status, pay attention to the comment from robot with the links first. Look at the Praktika reports first. The logs of GitHub actions usually contain less info.
-
-If a pull request appears to have no CI at all, or CI never picks up the last pushes, check `gh pr view <n> --json mergeable,mergeStateStatus` before anything else. A branch that conflicts with master reports `CONFLICTING`, and GitHub then cannot build the merge commit, so no `pull_request` workflow is triggered and the newest run stays pinned to an older commit. Merging master is the fix; nothing in the branch itself is wrong.
-
-A cancelled or aborted CI job is reported as `fail` by `gh pr checks`, which makes it look like a real finding. Before investigating one, check the job: `gh api repos/ClickHouse/ClickHouse/actions/runs/<run>/jobs` shows a `Run` step whose `conclusion` is `null` when the step never finished, the duration is a suspiciously round number of minutes, no artifacts are uploaded to S3 and no row reaches CIDB, and the Praktika report still says `RUNNING` for that job. Note that pushing a new commit cancels the in-flight run, so a push made while jobs are still running produces exactly this signature — weigh that before pushing to a branch whose CI has not finished.
-
-The stateless test runner reruns a failing test with the same randomized settings to see whether it is reproducible, and records the verdict in the report as `Runs: N, Failed: 0 ... All reruns passed`. Read that before treating a failure as real: a test that passed 100+ reruns is transient, whereas one that fails every attempt is worth chasing even when it surfaced in a flaky check.
 
 Do not use `-j` argument with ninja; do not use `nproc` - let it decide automatically.
 
