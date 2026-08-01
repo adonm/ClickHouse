@@ -2325,6 +2325,7 @@ class TestCase:
                     + database
                     + get_db_engine(testcase_args, database),
                     settings=get_create_database_settings(args, testcase_args),
+                    retry_error_codes=True,
                 )
         except Exception:
             shutil.rmtree(testcase_user_files, ignore_errors=True)
