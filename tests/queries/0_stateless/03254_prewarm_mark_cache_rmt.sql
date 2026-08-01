@@ -55,15 +55,21 @@ SYSTEM CLEAR MARK CACHE FOR TABLE t_prewarm_cache_rmt_2;
 SELECT count() FROM t_prewarm_cache_rmt_1 WHERE NOT ignore(*);
 
 --- Check that system query works.
+SET log_comment = '03254_prewarm_mark_cache_rmt_final';
 SYSTEM PREWARM MARK CACHE t_prewarm_cache_rmt_1;
 
 SELECT count() FROM t_prewarm_cache_rmt_1 WHERE NOT ignore(*);
+SELECT count() FROM t_prewarm_cache_rmt_1 WHERE NOT ignore(*);
+SELECT count() FROM t_prewarm_cache_rmt_1 WHERE NOT ignore(*);
+
+SET log_comment = '';
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT ProfileEvents['LoadedMarksCount'] > 0 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND query LIKE 'SELECT count() FROM t_prewarm_cache%'
-ORDER BY event_time_microseconds;
+-- The mark cache is process-wide and can be evicted by another test. Repeated
+-- selects make the assertion cover the accumulated evidence after prewarming.
+SELECT countIf(ProfileEvents['LoadedMarksCount'] = 0) > 0 FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '03254_prewarm_mark_cache_rmt_final';
 
 DROP TABLE IF EXISTS t_prewarm_cache_rmt_1;
 DROP TABLE IF EXISTS t_prewarm_cache_rmt_2;

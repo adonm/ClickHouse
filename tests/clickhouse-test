@@ -2316,7 +2316,7 @@ class TestCase:
         try:
             if created_test_tmp_dir:
                 os.mkdir(testcase_args.test_tmp_dir)
-            os.makedirs(testcase_user_files)
+            os.makedirs(testcase_user_files, exist_ok=True)
 
             if not testcase_args.database:
                 clickhouse_execute(
