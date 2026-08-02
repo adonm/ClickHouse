@@ -1,6 +1,3 @@
--- Tags: no-parallel
--- Tag no-parallel: checks server-global caches that concurrent tests can clear
-
 SET allow_experimental_analyzer = 1;
 
 CREATE TABLE first (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
