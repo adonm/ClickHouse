@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 
 --- These tests verify the caching of deserialized text index token infos in consecutive executions.
 --- The tokens cache caches individual token infos (not entire dictionary blocks).

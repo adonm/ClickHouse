@@ -1,4 +1,5 @@
--- Tags: long, no-parallel-replicas
+-- Tags: long, no-parallel-replicas, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 -- Tag long: needs ~1M rows for the QCC to populate (a granule-spanning chunk must be
 --   fully filtered before the LIMIT cancels the pipeline), so on the slower S3 +
 --   sanitizer configuration a single run takes ~180s and crosses the flaky-check

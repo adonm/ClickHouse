@@ -1,4 +1,5 @@
--- Tags: no-random-merge-tree-settings, no-random-settings, no-fasttest, no-parallel-replicas
+-- Tags: no-random-merge-tree-settings, no-random-settings, no-fasttest, no-parallel-replicas, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 -- no-parallel-replicas: reading from s3 ('S3GetObject' event) can happened on any "replica", so we can see no 'S3GetObject' on initiator
 
 DROP TABLE IF EXISTS t_lightweight_mut_5;

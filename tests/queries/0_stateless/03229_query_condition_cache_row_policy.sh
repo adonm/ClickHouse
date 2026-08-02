@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas
+# Tags: no-parallel-replicas, no-parallel
+# Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 # no-parallel-replicas: the query condition cache is populated per replica, so the poisoning is
 #                       deterministic only on a single replica
 

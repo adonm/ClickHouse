@@ -1,4 +1,5 @@
--- Tags: long, no-parallel-replicas
+-- Tags: long, no-parallel-replicas, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 -- Tag long: needs ~1.5M rows across two partitions for the TopK threshold to drop
 --   whole granules of the unchanged part, so on the slower S3 + sanitizer
 --   configuration a single run takes ~180s and crosses the flaky-check "test runs

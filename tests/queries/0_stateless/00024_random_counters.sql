@@ -1,4 +1,5 @@
--- Tags: stateful, no-msan
+-- Tags: stateful, no-msan, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 
 -- Check the same 1,000 counters as the original point-query workload, but aggregate
 -- test.visits once. Running 1,000 separate scans exceeds the per-test timeout under

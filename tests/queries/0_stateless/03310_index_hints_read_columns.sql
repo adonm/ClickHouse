@@ -1,4 +1,5 @@
--- Tags: no-random-settings, no-object-storage
+-- Tags: no-random-settings, no-object-storage, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 -- add_minmax_index_for_numeric_columns=0: More opened files
 
 -- Does additional index analysis round that the test doesn't expect

@@ -1,4 +1,5 @@
-
+-- Tags: no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 -- Tests system table 'system.query_condition_cache'
 
 SET allow_experimental_analyzer = 1;

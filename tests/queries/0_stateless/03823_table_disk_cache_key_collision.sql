@@ -1,4 +1,5 @@
--- Tags: no-fasttest, no-replicated-database
+-- Tags: no-fasttest, no-replicated-database, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 -- Tag no-fasttest - requires SSL for https
 -- Tag no-replicated-database - because of https://github.com/ClickHouse/ClickHouse/issues/97287
 

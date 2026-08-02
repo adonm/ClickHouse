@@ -1,4 +1,5 @@
--- Tags: no-shared-merge-tree
+-- Tags: no-shared-merge-tree, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 
 DROP TABLE IF EXISTS t_prewarm_cache_rmt_1;
 DROP TABLE IF EXISTS t_prewarm_cache_rmt_2;

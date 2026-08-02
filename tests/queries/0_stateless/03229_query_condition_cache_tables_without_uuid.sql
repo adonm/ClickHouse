@@ -1,4 +1,5 @@
--- Tags: no-shared-merge-tree
+-- Tags: no-shared-merge-tree, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 -- no-shared-merge-tree: doesn't support databases without UUID
 
 -- Testcase for https://github.com/ClickHouse/ClickHouse/issues/92863

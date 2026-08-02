@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 -- no-parallel-replicas: parallel replicas split the granule across replicas, so the per-segment
 --   build/cache counts asserted below would no longer be deterministic.
 

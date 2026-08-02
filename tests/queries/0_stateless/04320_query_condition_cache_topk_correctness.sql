@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 --
 -- Correctness regression for the Query Condition Cache (QCC) on the
 -- `ORDER BY <column> LIMIT n` (TopK) plan. The companion test

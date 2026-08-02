@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas, no-fasttest
+-- Tags: no-parallel-replicas, no-fasttest, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 -- Tag no-fasttest: COLLATE requires ICU, which is not available in the Fast test build.
 --
 -- Companion to `04217_query_condition_cache_topk.sql`: verify that the QCC key

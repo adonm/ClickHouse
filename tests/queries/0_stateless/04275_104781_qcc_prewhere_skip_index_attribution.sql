@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 
 -- Regression test for #104781: a `SELECT ... PREWHERE pk_prefix = X WHERE non_pk IN [...]`
 -- against a column with a `bloom_filter` skip index poisons the query condition cache for
