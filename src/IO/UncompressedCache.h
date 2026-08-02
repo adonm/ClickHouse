@@ -6,10 +6,6 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <Common/CacheBase.h>
 
-#include <functional>
-#include <memory>
-#include <string_view>
-
 
 namespace ProfileEvents
 {
@@ -27,7 +23,6 @@ struct UncompressedCacheCell
     Memory<JemallocCacheAllocator> data;
     size_t compressed_size{};
     UInt32 additional_bytes{};
-    std::shared_ptr<const String> source_path;
 };
 
 struct UncompressedSizeWeightFunction
@@ -68,17 +63,6 @@ public:
             ProfileEvents::increment(ProfileEvents::UncompressedCacheHits);
 
         return result.first;
-    }
-
-    void removeByPathPrefix(std::string_view path_prefix)
-    {
-        /// An explicit std::function disambiguates from remove(const Key &): UInt128 has
-        /// a templated constructor that makes a lambda argument ambiguous between the two.
-        std::function<bool(const Key &, const MappedPtr &)> predicate = [&](const Key &, const MappedPtr & cell)
-        {
-            return cell->source_path && cell->source_path->starts_with(path_prefix);
-        };
-        remove(predicate);
     }
 
 private:

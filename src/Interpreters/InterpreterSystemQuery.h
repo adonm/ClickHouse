@@ -2,7 +2,6 @@
 
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/ASTSystemQuery.h>
 #include <Parsers/SyncReplicaMode.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -17,6 +16,7 @@ namespace DB
 
 class Context;
 class AccessRightsElements;
+class ASTSystemQuery;
 class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 class RefreshTask;
@@ -109,7 +109,6 @@ private:
 
     void prewarmMarkCache();
     void prewarmPrimaryIndexCache();
-    void clearCachesForTable(ASTSystemQuery::Type type);
 
     void stopReplicatedDDLQueries();
     void startReplicatedDDLQueries();
