@@ -17,13 +17,13 @@ SYSTEM STOP MERGES t_lightweight_mut_5;
 INSERT INTO t_lightweight_mut_5 VALUES (1, 'a', 'b');
 ALTER TABLE t_lightweight_mut_5 UPDATE s1 = 'x', s2 = 'y' WHERE id = 1;
 
-SYSTEM CLEAR MARK CACHE FOR TABLE t_lightweight_mut_5;
+SYSTEM CLEAR MARK CACHE;
 SELECT s1 FROM t_lightweight_mut_5 ORDER BY id;
 
-SYSTEM CLEAR MARK CACHE FOR TABLE t_lightweight_mut_5;
+SYSTEM CLEAR MARK CACHE;
 SELECT s2 FROM t_lightweight_mut_5 ORDER BY id;
 
-SYSTEM CLEAR MARK CACHE FOR TABLE t_lightweight_mut_5;
+SYSTEM CLEAR MARK CACHE;
 SELECT s1, s2 FROM t_lightweight_mut_5 ORDER BY id;
 
 SYSTEM FLUSH LOGS query_log;

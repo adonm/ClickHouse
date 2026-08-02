@@ -79,7 +79,7 @@ SETTINGS max_insert_threads = 1, max_insert_block_size = 2_000_000, min_insert_b
 -- were written. Accumulate every entry ever observed for this table and assert over that union.
 DROP TABLE IF EXISTS qcc_seen;
 CREATE TABLE qcc_seen (key_hash UInt128) ENGINE = Memory;
-SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT '--- DESC LIMIT 5 ground truth (QCC off): top rows all come from partition 0';
 SELECT k FROM tab WHERE w = 7 ORDER BY k DESC LIMIT 5 SETTINGS use_query_condition_cache = 0;
@@ -132,7 +132,7 @@ ORDER BY event_time_microseconds DESC LIMIT 1;
 -- First prove the DESC warm-up really populated a TopK entry (a rerun hits it);
 -- otherwise the ASC 0-hits below would be a miss for the wrong reason (no entry
 -- at all on the one-part post-drop dataset), leaving the direction fold untested.
-SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 SELECT k FROM tab WHERE w = 7 ORDER BY k DESC LIMIT 5 SETTINGS log_comment = '04338_descwarm' FORMAT Null;
 SELECT k FROM tab WHERE w = 7 ORDER BY k DESC LIMIT 5 SETTINGS log_comment = '04338_descrerun' FORMAT Null;
 SYSTEM FLUSH LOGS query_log;
@@ -156,7 +156,7 @@ ORDER BY event_time_microseconds DESC LIMIT 1;
 -- the correct rows and neither reuse nor poison the TopK entries. Warm a positive
 -- TopK entry, run the negative-limit query (0 hits: it does not reuse the entry),
 -- then rerun the positive query (still hits: the negative run did not poison it).
-SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 SELECT k FROM tab WHERE w = 7 ORDER BY k DESC LIMIT 5 SETTINGS log_comment = '04338_neg_warm' FORMAT Null;
 SELECT '--- Negative LIMIT: correct result, TopK-QCC path does not engage';
 SELECT k FROM tab WHERE w = 7 ORDER BY k DESC LIMIT -5 SETTINGS use_query_condition_cache = 0;

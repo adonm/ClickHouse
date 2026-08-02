@@ -58,7 +58,7 @@ ORDER BY
 
 SELECT '--- without move to PREWHERE';
 
-SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT count(*) FROM tab WHERE b = 10_000 FORMAT Null SETTINGS use_query_condition_cache = true, optimize_move_to_prewhere = false;
 

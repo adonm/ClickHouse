@@ -71,7 +71,7 @@ SELECT * FROM text_index_cache_stats(filter = 'text_127');
 
 SELECT 'Clear text index tokens cache';
 
-SYSTEM CLEAR TEXT INDEX TOKENS CACHE FOR TABLE tab;
+SYSTEM CLEAR TEXT INDEX TOKENS CACHE;
 
 SELECT '--- cache miss after clearing cache.';
 SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_125');
@@ -95,5 +95,5 @@ SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_125');
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_125');
 
-SYSTEM CLEAR TEXT INDEX TOKENS CACHE FOR TABLE tab;
+SYSTEM CLEAR TEXT INDEX TOKENS CACHE;
 DROP TABLE tab;

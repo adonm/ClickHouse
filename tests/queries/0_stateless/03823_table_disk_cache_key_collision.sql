@@ -85,8 +85,8 @@ SETTINGS
     disk = disk(type = cache, path = 'filesystem_caches/stateful/store/', max_size = '4G',
     disk = disk(type = web, endpoint = 'https://tpc-ds-sf1.s3.us-east-1.amazonaws.com/store/'));
 
-SYSTEM DROP MARK CACHE FOR TABLE call_center;
-SYSTEM DROP MARK CACHE FOR TABLE store;
+SYSTEM DROP MARK CACHE;
+SYSTEM DROP MARK CACHE;
 
 SELECT s_store_id FROM store LIMIT 1;
 SELECT cc_call_center_id FROM call_center LIMIT 1;

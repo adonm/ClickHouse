@@ -110,7 +110,7 @@ LEFT JOIN
 ) AS aggregates USING CounterID
 ORDER BY position;
 
-SYSTEM CLEAR UNCOMPRESSED CACHE FOR TABLE test.hits;
+SYSTEM CLEAR UNCOMPRESSED CACHE;
 
 SET local_filesystem_read_method = 'pread_threadpool';
 SET min_bytes_to_use_direct_io = 1;

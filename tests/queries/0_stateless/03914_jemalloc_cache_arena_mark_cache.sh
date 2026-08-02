@@ -3,7 +3,7 @@
 # Tag no-parallel: issues global `SYSTEM DROP MARK CACHE`/`INDEX MARK CACHE`/`UNCOMPRESSED CACHE`/
 # `INDEX UNCOMPRESSED CACHE` and asserts the process-wide `MarkCacheBytes` metric, which any
 # concurrent MergeTree read pollutes; the second round of drops happens after the table is dropped
-# so it cannot be scoped `FOR TABLE` - the `mark-cache` group is not enough, it must run sequentially
+# so it cannot be table-scoped - the `mark-cache` group is not enough, it must run sequentially
 
 # Test that mark cache allocations use the dedicated jemalloc cache arena.
 # Arena pactive reclamation is tested by the integration test

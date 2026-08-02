@@ -45,7 +45,7 @@ FROM numbers(2048);
 SELECT 'cardinality lazytok', count() FROM tab_seg_cache WHERE hasToken(s, 'lazytok');
 
 -- Start from an empty cache so the first execution is a guaranteed cold miss.
-SYSTEM CLEAR TEXT INDEX POSTINGS CACHE FOR TABLE tab_seg_cache;
+SYSTEM CLEAR TEXT INDEX POSTINGS CACHE;
 
 -- Cold: every segment is a cache miss and gets built once.
 SELECT count() FROM tab_seg_cache WHERE hasToken(s, 'lazytok')
@@ -79,5 +79,5 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
   AND type = 'QueryFinish'
   AND log_comment = '04312_seg_cache_warm';
 
-SYSTEM CLEAR TEXT INDEX POSTINGS CACHE FOR TABLE tab_seg_cache;
+SYSTEM CLEAR TEXT INDEX POSTINGS CACHE;
 DROP TABLE tab_seg_cache;

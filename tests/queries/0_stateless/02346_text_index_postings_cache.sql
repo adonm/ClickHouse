@@ -1,7 +1,7 @@
 -- Tags: no-parallel-replicas, no-parallel
 -- Tag no-parallel: asserts an exact hit/miss sequence over the process-wide text index postings
 -- cache; a concurrent text-index test evicts this test's entries via shared-cache LRU pressure
--- (which the per-table `SYSTEM CLEAR ... FOR TABLE` scoping cannot prevent), so it must run
+-- (which a per-table cache clear cannot prevent), so it must run
 -- fully sequentially
 
 --- These tests verify the caching of a deserialized text index posting lists in the consecutive executions.
@@ -67,7 +67,7 @@ SELECT * FROM text_index_cache_stats(filter = 'text_pl_2');
 
 SELECT 'Clear text index postings cache';
 
-SYSTEM CLEAR TEXT INDEX POSTINGS CACHE FOR TABLE tab;
+SYSTEM CLEAR TEXT INDEX POSTINGS CACHE;
 
 SELECT '--- cache miss on the first token.';
 SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_pl_1');
@@ -81,6 +81,6 @@ SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_pl_1');
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_pl_1');
 
-SYSTEM CLEAR TEXT INDEX POSTINGS CACHE FOR TABLE tab;
+SYSTEM CLEAR TEXT INDEX POSTINGS CACHE;
 DROP VIEW text_index_cache_stats;
 DROP TABLE tab;

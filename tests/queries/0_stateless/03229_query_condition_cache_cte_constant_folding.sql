@@ -1,4 +1,5 @@
--- Tags: no-random-settings
+-- Tags: no-random-settings, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 
 -- Test for query condition cache correctness with CTE constant folding.
 -- When constants are folded from CTE expressions, different constant values must produce
@@ -13,7 +14,7 @@ CREATE TABLE tab (activity_year Int16) ENGINE = MergeTree ORDER BY activity_year
 -- Need enough rows to have multiple granules so the cache can incorrectly exclude some.
 INSERT INTO tab SELECT number % 10 + 2018 FROM numbers(100000);
 
-SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 -- First query: addMonths('2022-12-01', 0) -> year = 2022, filter: year IN (2021, 2022)
 WITH block_0 AS (

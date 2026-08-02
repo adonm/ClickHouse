@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+# Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 # Test that reading the whole JSON column with ADVANCED shared data serialization
 # does not open per-bucket data/marks/substreams files that are not needed for reading.
 # When reading the whole JSON column, only Structure (per bucket) and Copy streams are used;
@@ -49,7 +51,7 @@ ${CLICKHOUSE_CLIENT} -q "
 EXPECTED_MARKS=$((NUM_BUCKETS + 4))
 
 # Clear mark cache and run SELECT json with prefetch enabled, counting MarkCacheMisses.
-${CLICKHOUSE_CLIENT} -q "SYSTEM CLEAR MARK CACHE FOR TABLE ${TABLE_NAME}"
+${CLICKHOUSE_CLIENT} -q "SYSTEM CLEAR MARK CACHE"
 
 QUERY_ID=$(${CLICKHOUSE_CLIENT} -q "SELECT lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
 

@@ -15,7 +15,7 @@ SELECT count(*) FROM tab WHERE b = 10_000 SETTINGS use_query_condition_cache = t
 SELECT 'Expect a single entry in the cache';
 SELECT count(*) FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
 
-SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT 'Expect empty cache after DROP CACHE';
 SELECT count(*) FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));

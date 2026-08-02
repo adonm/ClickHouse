@@ -35,7 +35,7 @@ FROM numbers(1_000_000);
 -- were written. Accumulate every entry ever observed for this table and assert over that union.
 DROP TABLE IF EXISTS qcc_seen;
 CREATE TABLE qcc_seen (key_hash UInt128) ENGINE = Memory;
-SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
 SELECT uniqExact(key_hash) FROM qcc_seen;
 

@@ -12,7 +12,7 @@ SETTINGS use_primary_key_cache = 1, prewarm_primary_key_cache = 1, index_granula
 -- Insert will prewarm primary index cache
 INSERT INTO t_primary_index_cache SELECT number%10, number%11 FROM numbers(10000);
 
-SYSTEM CLEAR PRIMARY INDEX CACHE FOR TABLE t_primary_index_cache;
+SYSTEM CLEAR PRIMARY INDEX CACHE;
 
 -- Trigger index reload
 SELECT max(length(a || b)) FROM t_primary_index_cache WHERE a > '1' AND b < '99' SETTINGS log_comment = '03273_reload_query';

@@ -25,7 +25,7 @@ INSERT INTO tab SELECT sipHash64(number * 100 + 6), number, 'hit' FROM numbers(1
 
 SELECT '--- WHERE on non-primary-key column';
 
-SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT 'A SAMPLEing query must NOT write to the query condition cache.';
 SELECT count() FROM tab SAMPLE 0.1 WHERE val = 'hit' FORMAT Null;
@@ -36,7 +36,7 @@ SELECT count() FROM tab WHERE val = 'hit' SETTINGS use_query_condition_cache = t
 
 SELECT '--- WHERE on primary key column';
 
-SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT 'A SAMPLEing query must NOT write to the query condition cache.';
 SELECT count() FROM tab SAMPLE 0.1 WHERE id = 42 FORMAT Null;

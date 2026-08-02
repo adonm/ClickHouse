@@ -12,7 +12,7 @@ INSERT INTO tab SELECT number, number FROM numbers(1_000_000); -- 1 mio rows sou
 SELECT '--- with move to PREWHERE';
 SET optimize_move_to_prewhere = true;
 
-SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT 'Query conditions with FINAL keyword must not be cached.';
 SELECT count(*) FROM tab FINAL WHERE b = 10_000 SETTINGS use_query_condition_cache = true FORMAT Null;
@@ -21,7 +21,7 @@ SELECT count(*) FROM system.query_condition_cache WHERE table_uuid IN (SELECT uu
 SELECT '--- without move to PREWHERE';
 SET optimize_move_to_prewhere = false;
 
-SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT 'Query conditions with FINAL keyword must not be cached.';
 SELECT count(*) FROM tab FINAL WHERE b = 10_000 SETTINGS use_query_condition_cache = true FORMAT Null;

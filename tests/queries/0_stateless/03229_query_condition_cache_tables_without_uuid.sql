@@ -25,7 +25,7 @@ SELECT uuid FROM system.parts WHERE database = currentDatabase();
 
 SET use_query_condition_cache = 1;
 
-SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT count(*) from system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab')); -- no entry
 

@@ -75,7 +75,7 @@ SETTINGS max_insert_threads = 1, max_insert_block_size = 2_000_000, min_insert_b
 -- were written. Accumulate every entry ever observed for this table and assert over that union.
 DROP TABLE IF EXISTS qcc_seen;
 CREATE TABLE qcc_seen (key_hash UInt128) ENGINE = Memory;
-SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT '--- QCC starts empty';
 INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));

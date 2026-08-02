@@ -51,7 +51,7 @@ DROP TABLE IF EXISTS qcc_seen;
 CREATE TABLE qcc_seen (key_hash UInt128) ENGINE = Memory;
 
 SELECT '--- QCC starts empty';
-SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
 SELECT uniqExact(key_hash) FROM qcc_seen;
 
@@ -95,7 +95,7 @@ INSERT INTO tab2
 SELECT rand(), if(number % 2 = 0, number, NULL), number
 FROM numbers(1_000_000);
 
-SYSTEM CLEAR QUERY CONDITION CACHE FOR TABLE tab2;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 -- The section below starts from an empty cache, so the union restarts too.
 TRUNCATE TABLE qcc_seen;
 INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
