@@ -1,5 +1,7 @@
--- Tags: no-parallel-replicas, no-parallel
+-- Tags: no-parallel-replicas, no-parallel, no-release
 -- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
+-- Tag no-release: reads `table_uuid` from `system.query_condition_cache`, which is available only
+-- in debug and sanitizer builds.
 -- no-parallel-replicas: the query condition cache is populated per replica, so the poisoning is
 --   not reliably reproducible with parallel replicas
 

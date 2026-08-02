@@ -1,5 +1,7 @@
--- Tags: no-shared-merge-tree, no-parallel
+-- Tags: no-shared-merge-tree, no-parallel, no-release
 -- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
+-- Tag no-release: reads `table_uuid` from `system.query_condition_cache`, which is available only
+-- in debug and sanitizer builds.
 -- no-shared-merge-tree: doesn't support databases without UUID
 
 -- Testcase for https://github.com/ClickHouse/ClickHouse/issues/92863

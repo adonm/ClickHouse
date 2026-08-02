@@ -10,6 +10,8 @@ SET use_text_index_header_cache = 1;
 SET log_queries = 1;
 SET max_rows_to_read = 0;
 
+SYSTEM CLEAR TEXT INDEX HEADER CACHE;
+
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
 (

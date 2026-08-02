@@ -1,5 +1,7 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-release
 -- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
+-- Tag no-release: reads `part_name` from `system.query_condition_cache`, which is available only
+-- in debug and sanitizer builds.
 -- add_minmax_index_for_numeric_columns=0: Would use indices instead of the projections that we want to test
 
 SET use_statistics_for_part_pruning = 0; -- Prevent auto_statistics_types from pruning parts before query condition cache
