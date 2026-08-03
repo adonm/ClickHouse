@@ -7,7 +7,7 @@ cache_hits = 0, cache_misses = 1
 1
 1
 1
-cache_hits = 1, cache_misses = 1
+cache_hits = 1, cache_misses = 0
 Clear text index header cache
 --- cache miss on the first run.
 1
@@ -18,4 +18,4 @@ cache_hits = 0, cache_misses = 1
 1
 1
 1
-cache_hits = 1, cache_misses = 1
+cache_hits = 1, cache_misses = 0
