@@ -1029,12 +1029,7 @@ def test_restart_server(started_cluster):
                 clickhouse_node, mysql_node, action="REJECT --reject-with tcp-reset"
             )
             clickhouse_node.restart_clickhouse()
-            # Enumeration is tolerant of an unreachable MySQL server (as with the
-            # PostgreSQL database engine): it serves the local table cache, which is
-            # empty right after a restart, instead of throwing.
-            assert "test_table" not in clickhouse_node.query(
-                "SHOW TABLES FROM test_restart"
-            )
+            clickhouse_node.query_and_get_error("SHOW TABLES FROM test_restart")
         assert "test_table" in clickhouse_node.query("SHOW TABLES FROM test_restart")
 
 

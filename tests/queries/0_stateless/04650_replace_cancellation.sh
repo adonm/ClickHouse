@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: long, no-fasttest, no-msan, no-parallel, no-coverage, no-flaky-check
 # no-msan: that build has no embedded compiler, so case 22 would assert nothing.
-# no-parallel: case 21 samples the process-wide `CurrentMetrics::QueryNonInternal`.
+# Tag no-parallel: case 21 samples the process-wide `CurrentMetrics::QueryNonInternal`.
 # no-coverage: per-test coverage instrumentation makes the fixed side of cases 8 and 16 unstable.
 # no-flaky-check: The test verifies a timeout-based behavior and is not suitable for rerun-based flakiness detection.
 

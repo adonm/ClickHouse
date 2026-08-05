@@ -1,5 +1,5 @@
--- Tags: long, no-parallel-replicas, no-parallel
--- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
+-- Tags: long, no-parallel, no-parallel-replicas
+-- Tag no-parallel: Messes with internal cache
 -- Tag long: needs ~1.5M rows across two partitions for the TopK threshold to drop
 --   whole granules of the unchanged part, so on the slower S3 + sanitizer
 --   configuration a single run takes ~180s and crosses the flaky-check "test runs
@@ -76,11 +76,6 @@ SELECT 1,
 FROM numbers(1_000_000)
 SETTINGS max_insert_threads = 1, max_insert_block_size = 2_000_000, min_insert_block_size_rows = 2_000_000;
 
--- The query condition cache is process-wide and size-limited, so a concurrently running test
--- can evict this test's entries and make `count()` of the live cache report fewer entries than
--- were written. Accumulate every entry ever observed for this table and assert over that union.
-DROP TABLE IF EXISTS qcc_seen;
-CREATE TABLE qcc_seen (key_hash UInt128) ENGINE = Memory;
 SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT '--- DESC LIMIT 5 ground truth (QCC off): top rows all come from partition 0';
@@ -88,8 +83,7 @@ SELECT k FROM tab WHERE w = 7 ORDER BY k DESC LIMIT 5 SETTINGS use_query_conditi
 
 SELECT '--- Warm run records partition 1 granules as skippable under the TopK salt';
 SELECT k FROM tab WHERE w = 7 ORDER BY k DESC LIMIT 5 SETTINGS log_comment = '04338_warm';
-INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
-SELECT uniqExact(key_hash) > 0 FROM qcc_seen;
+SELECT count() > 0 FROM system.query_condition_cache;
 
 SELECT '--- Cached run, same part set: must match ground truth';
 SELECT k FROM tab WHERE w = 7 ORDER BY k DESC LIMIT 5 SETTINGS log_comment = '04338_cached';
@@ -185,4 +179,3 @@ WHERE current_database = currentDatabase() AND log_comment = '04338_neg_pos2' AN
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
 DROP TABLE tab;
-DROP TABLE qcc_seen;

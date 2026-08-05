@@ -1,5 +1,5 @@
--- Tags: no-parallel-replicas, no-fasttest, no-parallel
--- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
+-- Tags: no-parallel, no-parallel-replicas, no-fasttest
+-- Tag no-parallel: Messes with internal cache.
 -- Tag no-fasttest: COLLATE requires ICU, which is not available in the Fast test build.
 --
 -- Companion to `04217_query_condition_cache_topk.sql`: verify that the QCC key
@@ -32,27 +32,17 @@ INSERT INTO tab
 SELECT rand(), toString(number), number
 FROM numbers(1_000_000);
 
--- The query condition cache is process-wide and size-limited, so a concurrently running test
--- can evict this test's entries and make `count()` of the live cache report fewer entries than
--- were written. Accumulate every entry ever observed for this table and assert over that union.
-DROP TABLE IF EXISTS qcc_seen;
-CREATE TABLE qcc_seen (key_hash UInt128) ENGINE = Memory;
 SYSTEM CLEAR QUERY CONDITION CACHE;
-INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
-SELECT uniqExact(key_hash) FROM qcc_seen;
+SELECT count() FROM system.query_condition_cache;
 
 SELECT '--- Same COLLATE locale re-runs reuse the same QCC entry';
 SELECT s FROM tab WHERE v = 10000 ORDER BY s ASC COLLATE 'en_US' LIMIT 5 FORMAT Null;
-INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
-SELECT uniqExact(key_hash) FROM qcc_seen;
+SELECT count() FROM system.query_condition_cache;
 SELECT s FROM tab WHERE v = 10000 ORDER BY s ASC COLLATE 'en_US' LIMIT 5 FORMAT Null;
-INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
-SELECT uniqExact(key_hash) FROM qcc_seen;
+SELECT count() FROM system.query_condition_cache;
 
 SELECT '--- Different COLLATE locale writes a separate entry';
 SELECT s FROM tab WHERE v = 10000 ORDER BY s ASC COLLATE 'fr' LIMIT 5 FORMAT Null;
-INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
-SELECT uniqExact(key_hash) FROM qcc_seen;
+SELECT count() FROM system.query_condition_cache;
 
 DROP TABLE tab;
-DROP TABLE qcc_seen;

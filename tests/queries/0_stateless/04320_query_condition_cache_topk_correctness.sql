@@ -1,5 +1,5 @@
 -- Tags: long, no-parallel, no-parallel-replicas
--- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
+-- Tag no-parallel: Messes with internal cache
 -- Tag long: does a ~100k-row insert and several full-part TopK scans; on the slower
 --   S3 + sanitizer configuration this is heavy enough that, run repeatedly by the
 --   flaky check, it can approach the "test runs too long" threshold. The tag exempts
@@ -77,24 +77,17 @@ SETTINGS index_granularity = 64,
 INSERT INTO tab SELECT rand(), number, number % 1000 FROM numbers(100_000)
 SETTINGS max_insert_threads = 1, max_insert_block_size = 2_000_000, min_insert_block_size_rows = 2_000_000;
 
--- The query condition cache is process-wide and size-limited, so a concurrently running test
--- can evict this test's entries and make `count()` of the live cache report fewer entries than
--- were written. Accumulate every entry ever observed for this table and assert over that union.
-DROP TABLE IF EXISTS qcc_seen;
-CREATE TABLE qcc_seen (key_hash UInt128) ENGINE = Memory;
 SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT '--- QCC starts empty';
-INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
-SELECT uniqExact(key_hash) FROM qcc_seen;
+SELECT count() FROM system.query_condition_cache;
 
 SELECT '--- ASC LIMIT 5: ground truth (QCC off)';
 SELECT k FROM tab WHERE w = 7 ORDER BY k ASC LIMIT 5 SETTINGS use_query_condition_cache = 0;
 
 SELECT '--- ASC LIMIT 5: first run writes a QCC entry under the active TopK filter';
 SELECT k FROM tab WHERE w = 7 ORDER BY k ASC LIMIT 5;
-INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab'));
-SELECT uniqExact(key_hash) > 0 FROM qcc_seen;
+SELECT count() > 0 FROM system.query_condition_cache;
 
 SELECT '--- ASC LIMIT 5: second run reads cached granule decisions, must match ground truth';
 SELECT k FROM tab WHERE w = 7 ORDER BY k ASC LIMIT 5;
@@ -117,4 +110,3 @@ SELECT '---';
 SELECT k FROM tab WHERE w = 7 ORDER BY k DESC LIMIT 5;
 
 DROP TABLE tab;
-DROP TABLE qcc_seen;

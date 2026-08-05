@@ -1,5 +1,5 @@
--- Tags: long, no-parallel-replicas, no-parallel
--- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
+-- Tags: long, no-parallel, no-parallel-replicas
+-- Tag no-parallel: Messes with internal cache
 -- Tag long: needs ~1M rows for the QCC to populate (a granule-spanning chunk must be
 --   fully filtered before the LIMIT cancels the pipeline), so on the slower S3 +
 --   sanitizer configuration a single run takes ~180s and crosses the flaky-check
@@ -43,42 +43,27 @@ SETTINGS index_granularity = 64,
 
 INSERT INTO tab SELECT rand(), number, number FROM numbers(1_000_000);
 
--- The query condition cache is process-wide and size-limited, so a concurrently running
--- test can evict this test's entries at any point, and asserting on `count()` of the live
--- cache then reports fewer entries than were written. Accumulate every entry ever observed
--- for this test's tables and assert over that union instead: an eviction after an entry has
--- been recorded here can no longer change the result, and a re-written entry keeps the same
--- `key_hash` (a hash of table_uuid, part_name and condition_hash) so it is not counted twice.
-DROP TABLE IF EXISTS qcc_seen;
-CREATE TABLE qcc_seen (key_hash UInt128) ENGINE = Memory;
-
 SELECT '--- QCC starts empty';
 SYSTEM CLEAR QUERY CONDITION CACHE;
-INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
-SELECT uniqExact(key_hash) FROM qcc_seen;
+SELECT count() FROM system.query_condition_cache;
 
 SELECT '--- Same TopK plan re-runs reuse the same QCC entry';
 SELECT v1 FROM tab WHERE v2 = 10000 ORDER BY v1 ASC LIMIT 5 FORMAT Null;
-INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
-SELECT uniqExact(key_hash) FROM qcc_seen;
+SELECT count() FROM system.query_condition_cache;
 SELECT v1 FROM tab WHERE v2 = 10000 ORDER BY v1 ASC LIMIT 5 FORMAT Null;
-INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
-SELECT uniqExact(key_hash) FROM qcc_seen;
+SELECT count() FROM system.query_condition_cache;
 
 SELECT '--- Different LIMIT writes a separate entry';
 SELECT v1 FROM tab WHERE v2 = 10000 ORDER BY v1 ASC LIMIT 7 FORMAT Null;
-INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
-SELECT uniqExact(key_hash) FROM qcc_seen;
+SELECT count() FROM system.query_condition_cache;
 
 SELECT '--- Different sort direction writes a separate entry';
 SELECT v1 FROM tab WHERE v2 = 10000 ORDER BY v1 DESC LIMIT 5 FORMAT Null;
-INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
-SELECT uniqExact(key_hash) FROM qcc_seen;
+SELECT count() FROM system.query_condition_cache;
 
 SELECT '--- Different sort column writes a separate entry';
 SELECT v2 FROM tab WHERE v2 = 10000 ORDER BY v2 ASC LIMIT 5 FORMAT Null;
-INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
-SELECT uniqExact(key_hash) FROM qcc_seen;
+SELECT count() FROM system.query_condition_cache;
 
 DROP TABLE tab;
 
@@ -98,23 +83,16 @@ SELECT rand(), if(number % 2 = 0, number, NULL), number
 FROM numbers(1_000_000);
 
 SYSTEM CLEAR QUERY CONDITION CACHE;
--- The section below starts from an empty cache, so the union restarts too.
-TRUNCATE TABLE qcc_seen;
-INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
-SELECT uniqExact(key_hash) FROM qcc_seen;
+SELECT count() FROM system.query_condition_cache;
 
 SELECT '--- Same NULLS direction re-runs reuse the same QCC entry';
 SELECT n FROM tab2 WHERE v = 10000 ORDER BY n ASC NULLS FIRST LIMIT 5 FORMAT Null;
-INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
-SELECT uniqExact(key_hash) FROM qcc_seen;
+SELECT count() FROM system.query_condition_cache;
 SELECT n FROM tab2 WHERE v = 10000 ORDER BY n ASC NULLS FIRST LIMIT 5 FORMAT Null;
-INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
-SELECT uniqExact(key_hash) FROM qcc_seen;
+SELECT count() FROM system.query_condition_cache;
 
 SELECT '--- Different NULLS direction writes a separate entry';
 SELECT n FROM tab2 WHERE v = 10000 ORDER BY n ASC NULLS LAST LIMIT 5 FORMAT Null;
-INSERT INTO qcc_seen SELECT key_hash FROM system.query_condition_cache WHERE table_uuid IN (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name IN ('tab', 'tab2'));
-SELECT uniqExact(key_hash) FROM qcc_seen;
+SELECT count() FROM system.query_condition_cache;
 
 DROP TABLE tab2;
-DROP TABLE qcc_seen;
