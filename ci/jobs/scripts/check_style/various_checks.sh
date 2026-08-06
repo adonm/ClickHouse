@@ -198,9 +198,13 @@ find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py'
 
 # Unscoped cache clears affect every test sharing the server. Scoped forms such as
 # `FOR TABLE`, query-cache `TAG`, and named filesystem caches are parallel-safe.
+# The `query cache` branch must come after `query condition`, otherwise the shorter
+# alternative would never let the more specific cache name be recognised.
+# Occurrences inside `formatQuery`/`parseQuery`-style calls are query *text*, never executed,
+# so they are skipped along with `EXPLAIN SYNTAX` and `clickhouse-local` invocations.
 tests_with_global_cache_drop=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
-        xargs grep -liP '^(?!\s*(?:--|#|EXPLAIN\s+SYNTAX|\$CLICKHOUSE_LOCAL\b)).*system\s+(?:clear|drop)\s+(?:(?:mark|primary\s+index|uncompressed|index\s+mark|index\s+uncompressed|vector\s+similarity\s+index|text\s+index(?:\s+(?:tokens|header|postings))?|query\s+condition|compiled\s+expression|parquet\s+metadata|iceberg\s+metadata|page)\s+cache|text\s+index\s+caches)(?![^;\n]*(?:for\s+table|for\s+source|\btag\b))' |
+        xargs grep -liP '^(?!\s*(?:--|#|EXPLAIN\s+SYNTAX|SELECT\s+(?:format|parse|normalize)Query|\$CLICKHOUSE_LOCAL\b)).*system\s+(?:clear|drop)\s+(?:(?:mark|primary\s+index|uncompressed|index\s+mark|index\s+uncompressed|vector\s+similarity\s+index|text\s+index(?:\s+(?:tokens|header|postings))?|query\s+condition|query|compiled\s+expression|parquet\s+metadata|iceberg\s+metadata|page)\s+cache|text\s+index\s+caches)(?![^;\n]*(?:for\s+table|for\s+source|\btag\b))' |
         sort -u
 ) )
 for test_case in "${tests_with_global_cache_drop[@]}"; do
