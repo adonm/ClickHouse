@@ -44,7 +44,14 @@ $CLICKHOUSE_CLIENT -q "ATTACH DATABASE ${NEW_DATABASE}"
 $CLICKHOUSE_CLIENT -q "SELECT count(n), sum(n) FROM ${NEW_DATABASE}.mt"
 
 second_insert_query_id=01107_second_insert_$CLICKHOUSE_DATABASE
-$CLICKHOUSE_CLIENT --query_id "$second_insert_query_id" --function_sleep_max_microseconds_per_block 60000000 -q "INSERT INTO ${NEW_DATABASE}.mt SELECT number + sleepEachRow(1) FROM numbers(5)" && echo "end" &
+# `dropped` has to be printed before `end`: the point of the asynchronous `DROP DATABASE` below is
+# that it returns while this INSERT is still running instead of waiting for it. The INSERT therefore
+# has to still be in flight once the drop returns, so it sleeps as long as the first one - each
+# `clickhouse-client` start costs seconds on a loaded machine, and the poll loop needs a few of them
+# before it sees the query, which a shorter INSERT can outlive. For the same reason the drop does not
+# sleep before announcing itself: it returns immediately, so making the two messages race over a
+# fixed one-second window only narrows the margin instead of ordering them.
+$CLICKHOUSE_CLIENT --query_id "$second_insert_query_id" --function_sleep_max_microseconds_per_block 60000000 -q "INSERT INTO ${NEW_DATABASE}.mt SELECT number + sleepEachRow(3) FROM numbers(5)" && echo "end" &
 wait_for_insert_to_start "$second_insert_query_id"
-$CLICKHOUSE_CLIENT -q "DROP DATABASE ${NEW_DATABASE}" --database_atomic_wait_for_drop_and_detach_synchronously=0 && sleep 1 && echo "dropped"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE ${NEW_DATABASE}" --database_atomic_wait_for_drop_and_detach_synchronously=0 && echo "dropped"
 wait

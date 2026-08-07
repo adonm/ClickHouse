@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: long, no-fasttest, no-parallel, no-flaky-check
-# no-parallel: the leak case samples the process-wide `CurrentMetrics::QueryNonInternal`.
+# Tag no-parallel: the leak case samples the process-wide `CurrentMetrics::QueryNonInternal`.
 # no-flaky-check: every assertion is a cancellation latency, and the flaky check runs many copies of
 # one test on a single runner; that contention overlaps the unfixed distribution, so no bound both
 # passes fixed and fails unfixed.
