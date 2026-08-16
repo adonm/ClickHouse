@@ -1400,6 +1400,10 @@ class JobConfigs:
             ],
         ),
         run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",
+        # Dolor shares `clickhouse_integration_tests_volume` with the other DinD jobs, so without
+        # this its containers, images and volumes outlive the run and the next job on the runner
+        # inherits them. Same hook the other integration-tests-runner jobs register.
+        post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
             parameter="amd_debug",
