@@ -2,13 +2,14 @@ from abc import abstractmethod
 import xml.etree.ElementTree as ET
 import tempfile
 import multiprocessing
+import os
 import random
 import string
 import typing
 
 from environment import get_system_timezones
-from integration.helpers.cluster import ClickHouseCluster
-from integration.helpers.config_cluster import mongo_pass, mysql_pass, pg_pass
+from tests.integration.helpers.cluster import ClickHouseCluster
+from tests.integration.helpers.config_cluster import mongo_pass, mysql_pass, pg_pass
 
 
 def generate_xml_safe_string(length: int = 10) -> str:
@@ -732,6 +733,20 @@ def remove_element(property_element: ET.Element, elem: str):
     remove_xml.text = ""
 
 
+def get_cluster_names(remote_servers: typing.Optional[ET.Element]) -> list[str]:
+    """Collect the names of the clusters defined in a `remote_servers` element.
+
+    The names are read from the element itself instead of being derived from a naming
+    convention, because `remote_servers` may come from a configuration file written by
+    someone else (e.g. the CI job) and hold clusters not named `cluster<N>`. Entries
+    added by `remove_element` are markers to drop a cluster inherited from the server's
+    own configuration, so they are skipped.
+    """
+    if remote_servers is None:
+        return []
+    return [c.tag for c in remote_servers if "remove" not in c.attrib]
+
+
 def normalize_cache_properties(cache_element: ET.Element):
     # `FileCacheSettings::validate` rejects split cache with overcommit policies.
     use_split_cache = cache_element.find("use_split_cache")
@@ -1322,7 +1337,6 @@ class SharedCatalogPropertiesGroup(PropertiesGroup):
         cluster: ClickHouseCluster,
         is_private_binary: bool,
     ):
-        number_clusters = 0
         shared_settings = {
             "delay_before_drop_intention_seconds": threshold_generator(
                 0.2, 0.2, 0, 60, 32
@@ -1338,14 +1352,13 @@ class SharedCatalogPropertiesGroup(PropertiesGroup):
             "state_application_thread_pool_size": threads_lambda,
         }
         remote_servers = top_root.find("remote_servers")
-        if remote_servers is not None:
-            number_clusters = len(
-                [c for c in remote_servers if "remove" not in c.attrib]
-            )
-        if number_clusters > 0 and random.randint(1, 100) <= 75:
-            cluster_name_choices = [f"cluster{i}" for i in range(0, number_clusters)]
+        cluster_name_choices = get_cluster_names(remote_servers)
+        if cluster_name_choices and random.randint(1, 100) <= 75:
             if remote_servers is None or remote_servers.find("default") is None:
-                # The default cluster was not removed
+                # The default cluster was not removed. It is missing from this element but
+                # inherited from `programs/server/config.xml`, and Dolor nodes use
+                # `copy_common_configs=False`, so the `<remote_servers remove="remove"/>` of
+                # `0_common_instance_config.xml` never drops it - only a marker written here.
                 cluster_name_choices.append("default")
             shared_settings["cluster_name"] = lambda: random.choice(
                 cluster_name_choices
@@ -1369,7 +1382,7 @@ class DatabaseReplicatedGroup(PropertiesGroup):
             "internal_replication": true_false_lambda,
             "logs_to_keep": threshold_generator(0.2, 0.2, 0, 3000),
             "max_broken_tables_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-            "max_replication_lag_to_enqueue": threshold_generator(0.2, 0.2, 0, 200),
+            "max_replication_lag_to_enqueue": threshold_generator(0.2, 0.2, 1, 200),
         }
         apply_properties_recursively(property_element, replicated_settings, 0)
 
@@ -1500,9 +1513,8 @@ def modify_server_settings(
     cluster: ClickHouseCluster,
     is_private_binary: bool,
     input_config_path: str,
-) -> tuple[bool, str, int]:
+) -> tuple[bool, str, list[str]]:
     modified = False
-    number_clusters = 0
 
     # Parse the existing XML file
     tree = ET.parse(input_config_path)
@@ -1742,27 +1754,25 @@ def modify_server_settings(
             zookeeper_path_xml = ET.SubElement(transaction_log_xml, "zookeeper_path")
             zookeeper_path_xml.text = "/clickhouse/txn"
 
-    # Get number of clusters if generated, to be used in `users.xml` if needed
-    remote_servers = root.find("remote_servers")
-    if remote_servers is not None:
-        number_clusters = len([c for c in remote_servers if "remove" not in c.attrib])
+    # Get the cluster names if generated, to be used in `users.xml` if needed
+    cluster_names = get_cluster_names(root.find("remote_servers"))
 
     if modified:
         ET.indent(tree, space="    ", level=0)  # indent tree
         temp_path = None
         # Create a temporary file
         with tempfile.NamedTemporaryFile(
-            dir=args.tmp_files_dir, suffix=".xml", delete=False
+            dir=args.tmp_files_dir, prefix="config_", suffix=".xml", delete=False
         ) as temp_file:
             temp_path = temp_file.name
             # Write the modified XML to the temporary file
             tree.write(temp_path, encoding="utf-8", xml_declaration=True)
-        return True, temp_path, number_clusters
-    return False, input_config_path, number_clusters
+        return True, temp_path, cluster_names
+    return False, input_config_path, cluster_names
 
 
 def modify_user_settings(
-    args, input_config_path: str, number_clusters: int
+    args, input_config_path: str, cluster_names: list[str]
 ) -> tuple[bool, str]:
     modified = False
 
@@ -1772,7 +1782,7 @@ def modify_user_settings(
     if root.tag != "clickhouse":
         raise Exception("<clickhouse> element not found")
 
-    if number_clusters > 0:
+    if cluster_names:
         modified = True
         profiles_xml = root.find("profiles")
         if profiles_xml is None:
@@ -1787,16 +1797,17 @@ def modify_user_settings(
             cluster_for_parallel_replicas_xml = ET.SubElement(
                 default_xml, "cluster_for_parallel_replicas"
             )
-        cluster_for_parallel_replicas_xml.text = (
-            f"cluster{random.choice(range(0, number_clusters))}"
-        )
+        # Keep a cluster the caller already pinned (`lacasadeldolor_job.py` sets
+        # `allnodes`), only pick one when it is missing or names a dropped cluster.
+        if (cluster_for_parallel_replicas_xml.text or "").strip() not in cluster_names:
+            cluster_for_parallel_replicas_xml.text = random.choice(cluster_names)
 
     if modified:
         ET.indent(tree, space="    ", level=0)  # indent tree
         temp_path = None
         # Create a temporary file
         with tempfile.NamedTemporaryFile(
-            dir=args.tmp_files_dir, suffix=".xml", delete=False
+            dir=args.tmp_files_dir, prefix="user_", suffix=".xml", delete=False
         ) as temp_file:
             temp_path = temp_file.name
             # Write the modified XML to the temporary file
@@ -2023,7 +2034,9 @@ def modify_keeper_settings(args, is_private_binary: bool) -> list[str]:
         session_timeout_ms_xml = ET.SubElement(
             coordination_settings_xml, "session_timeout_ms"
         )
-        session_timeout_ms_xml.text = "15000"
+        session_timeout_ms_xml.text = (
+            "60000" if os.environ.get("CLICKHOUSE_IS_SANITIZED") == "1" else "15000"
+        )
         raft_logs_level_xml = ET.SubElement(
             coordination_settings_xml, "raft_logs_level"
         )
@@ -2072,7 +2085,7 @@ def modify_keeper_settings(args, is_private_binary: bool) -> list[str]:
 
         ET.indent(tree, space="    ", level=0)
         with tempfile.NamedTemporaryFile(
-            dir=args.tmp_files_dir, suffix=".xml", delete=False
+            dir=args.tmp_files_dir, prefix="keeper_", suffix=".xml", delete=False
         ) as temp_file:
             result_configs.append(temp_file.name)
             tree.write(temp_file.name, encoding="utf-8", xml_declaration=True)

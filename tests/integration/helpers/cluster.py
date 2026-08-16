@@ -2749,7 +2749,7 @@ class ClickHouseCluster:
             if not detach:
                 assert not get_exec_id
                 return output.decode()
-            return exec_id if get_exec_id else output
+            return exec_id["Id"] if get_exec_id else output
 
     def copy_file_to_container(self, container_id, local_path, dest_path):
         with open(local_path, "rb") as fdata:
@@ -4275,10 +4275,14 @@ class ClickHouseCluster:
                     self.exec_in_container(
                         instance.docker_id, ["chmod", "+777", "/usr/bin/clickhouse"]
                     )
-                    instance.exec_in_container(
+                    instance.clickhouse_last_exit_code = None
+                    instance.clickhouse_forced_stop = False
+                    instance.clickhouse_exec_id = instance.exec_in_container(
                         ["bash", "-c", instance.clickhouse_start_command],
                         user=str(os.getuid()),
                         detach=True,
+                        use_cli=False,
+                        get_exec_id=True,
                     )
 
             start_timeout = 300.0  # seconds
@@ -4360,13 +4364,6 @@ class ClickHouseCluster:
             # Check server logs for Fatal messages and sanitizer failures.
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
             for name, instance in self.instances.items():
-                # Collect exit codes for later inspection
-                if self.with_dolor:
-                    container = self.docker_client.containers.get(instance.docker_id)
-                    res = container.wait()
-                    exit_code = res["StatusCode"]
-                    logging.info(f"The server {name} exited with code: {exit_code}")
-
                 if not ignore_sanitizer and instance.contains_in_log(
                     SANITIZER_SIGN, from_host=True, filename="stderr.log"
                 ):
@@ -5109,6 +5106,11 @@ class ClickHouseInstance:
         self.is_up = False
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
+        self.clickhouse_exec_id = ""
+        # Terminal state of the last server exec. `clickhouse_exec_id` is dropped once
+        # the process is gone, so these keep how it went away available to callers.
+        self.clickhouse_last_exit_code = None
+        self.clickhouse_forced_stop = False
 
     def is_built_with_sanitizer(self, sanitizer_name=""):
         build_opts = self.query(
@@ -5454,6 +5456,21 @@ class ClickHouseInstance:
             method=method, url=url, params=params, data=data, headers=headers, *args, **kwargs
         )
 
+    def _capture_clickhouse_exit(self):
+        """Record the exit code of the server exec before its id is dropped.
+
+        `clickhouse_exec_id` is the only handle to the finished exec, so the code has
+        to be read here or it is lost and the caller can no longer tell a clean
+        shutdown from a forced one.
+        """
+        if not self.clickhouse_exec_id:
+            return
+        try:
+            info = self.cluster.docker_client.api.exec_inspect(self.clickhouse_exec_id)
+            self.clickhouse_last_exit_code = info["ExitCode"]
+        except Exception as e:
+            logging.warning(f"Could not inspect exec of {self.name}: {e}")
+
     def stop_clickhouse(self, stop_wait_sec=30, kill=False):
         if not self.stay_alive:
             raise Exception(
@@ -5497,6 +5514,8 @@ class ClickHouseInstance:
             while time.time() <= start_time + stop_wait_sec:
                 pid = self.get_process_pid("clickhouse")
                 if pid is None:
+                    self._capture_clickhouse_exit()
+                    self.clickhouse_exec_id = ""  # old exec is no longer valid
                     return True
                 else:
                     time.sleep(1)
@@ -5518,6 +5537,9 @@ class ClickHouseInstance:
                     ],
                     user="root",
                 )
+                # Escalation only: a caller that asked for kill=True directly wanted a
+                # hard stop, but reaching here means a graceful stop timed out.
+                self.clickhouse_forced_stop = True
                 self.stop_clickhouse(kill=True)
             else:
                 ps_all = self.exec_in_container(
@@ -5552,7 +5574,9 @@ class ClickHouseInstance:
             pid = self.get_process_pid("clickhouse")
             if pid is None:
                 logging.debug("No clickhouse process running. Start new one.")
-                exec_id = self.exec_in_container(
+                self.clickhouse_last_exit_code = None
+                self.clickhouse_forced_stop = False
+                self.clickhouse_exec_id = exec_id = self.exec_in_container(
                     [
                         "bash",
                         "-c",
@@ -5922,9 +5946,16 @@ class ClickHouseInstance:
             ],
             user="root",
         )
-        self.exec_in_container(
+        # Make sure no ClickHouse exec id is set before starting
+        self.clickhouse_exec_id = ""
+        self.clickhouse_last_exit_code = None
+        self.clickhouse_forced_stop = False
+        self.clickhouse_exec_id = self.exec_in_container(
             ["bash", "-c", self.clickhouse_start_command_in_daemon],
             user=str(os.getuid()),
+            detach=True,
+            use_cli=False,
+            get_exec_id=True,
         )
 
         # wait start
@@ -6003,9 +6034,16 @@ class ClickHouseInstance:
                     "if [ ! -f /var/lib/clickhouse/metadata/default.sql ]; then echo 'ATTACH DATABASE default ENGINE=Ordinary' > /var/lib/clickhouse/metadata/default.sql; fi",
                 ]
             )
-        self.exec_in_container(
+        # Make sure no ClickHouse exec id is set before starting
+        self.clickhouse_exec_id = ""
+        self.clickhouse_last_exit_code = None
+        self.clickhouse_forced_stop = False
+        self.clickhouse_exec_id = self.exec_in_container(
             ["bash", "-c", self.clickhouse_start_command_in_daemon],
             user=str(os.getuid()),
+            detach=True,
+            use_cli=False,
+            get_exec_id=True,
         )
 
         # wait start
@@ -6321,7 +6359,14 @@ class ClickHouseInstance:
         if self.use_distributed_plan is not None:
             use_distributed_plan = self.use_distributed_plan
 
-        write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
+        if not self.cluster.with_dolor:
+            # The `Detect passwords in tests` rule throws on match to catch a test
+            # leaking a password into the logs. La Casa del Dolor generates DDL with the
+            # integration-test credentials by construction (e.g.
+            # `ENGINE = PostgreSQL(..., 'ClickHouse_PostgreSQL_P@ssw0rd', ...)`), and a
+            # query that fails to parse is logged before the arguments can be masked, so
+            # the rule turns fuzzer noise into a spurious logical error.
+            write_embedded_config("0_common_masking_rules.xml", self.config_d_dir)
         write_embedded_config("0_common_disable_crash_writer.xml", self.config_d_dir)
         write_embedded_config("0_common_enforce_zookeeper_component_name.xml", self.config_d_dir)
 
@@ -6498,7 +6543,7 @@ class ClickHouseInstance:
 
         if self.cluster.with_dolor:
             entrypoint_cmd = "bash -c 'coproc tail -f /dev/null; wait $!'"
-        if self.stay_alive:
+        elif self.stay_alive:
             entrypoint_cmd = self.clickhouse_stay_alive_command
         else:
             entrypoint_cmd = self.clickhouse_start_command
