@@ -294,10 +294,10 @@ def _classify_failed_run(
             "WARNING: Sanitizer OOM in a rotated log - test considered passed"
         )
         benign_downgrade = True
-    # A shutdown that had to be forced leaves no report anywhere: `collapse_server_exit_code`
-    # already withheld its 137 from the kernel-OOM heuristic, so name it here rather than let
-    # it fall through to the nondescript error below.
-    if failed_result is None and not benign_downgrade and forced_stop:
+    # A forced shutdown leaves no report anywhere and is a failure in its own right, not
+    # something a benign OOM verdict explains: `collapse_server_exit_code` already withheld its
+    # 137 from the kernel-OOM heuristic, so it overrides `benign_downgrade` instead of yielding.
+    if failed_result is None and forced_stop:
         failed_result = Result.create_from(
             status=Result.Status.FAIL,
             info="A server did not shut down gracefully and had to be force killed. Check fuzzer.log.",
@@ -309,6 +309,10 @@ def _classify_failed_run(
             info="dolor.py exited with non-zero code but no specific error was identified. Check fuzzer.log.",
             stopwatch=sw,
         )
+    if failed_result is not None:
+        # The override only ever labels an OK verdict; printing "test considered passed" on a
+        # run this function fails would contradict the report.
+        info_override = None
     return failed_result, info_override
 
 
