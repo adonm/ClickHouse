@@ -4277,13 +4277,18 @@ class ClickHouseCluster:
                     )
                     instance.clickhouse_last_exit_code = None
                     instance.clickhouse_forced_stop = False
-                    instance.clickhouse_exec_id = instance.exec_in_container(
+                    # Same ordering as `start_clickhouse`: `exec_in_container` throws when the
+                    # server exits immediately, so clear the handle first and take the new one
+                    # only once the start returned, never leaving a finished exec behind.
+                    instance.clickhouse_exec_id = ""
+                    exec_id = instance.exec_in_container(
                         ["bash", "-c", instance.clickhouse_start_command],
                         user=str(os.getuid()),
                         detach=True,
                         use_cli=False,
                         get_exec_id=True,
                     )
+                    instance.clickhouse_exec_id = exec_id
 
             start_timeout = 300.0  # seconds
             connection_timeout = None
@@ -5576,7 +5581,13 @@ class ClickHouseInstance:
                 logging.debug("No clickhouse process running. Start new one.")
                 self.clickhouse_last_exit_code = None
                 self.clickhouse_forced_stop = False
-                self.clickhouse_exec_id = exec_id = self.exec_in_container(
+                # Drop the previous exec before starting, and take the new id only once the
+                # start returned. `exec_in_container` inspects the exec it just created and
+                # throws when the server exited immediately, so assigning in one statement
+                # would leave the finished exec of the *previous* server in place, and its
+                # exit code would then be read as if it belonged to this one.
+                self.clickhouse_exec_id = ""
+                exec_id = self.exec_in_container(
                     [
                         "bash",
                         "-c",
@@ -5592,6 +5603,7 @@ class ClickHouseInstance:
                     get_exec_id=True,
                     environment=environment,
                 )
+                self.clickhouse_exec_id = exec_id
                 if not wait_start:
                     return exec_id
                 if expected_to_fail:
