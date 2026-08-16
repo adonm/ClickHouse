@@ -386,6 +386,26 @@ logger = logging.getLogger(__name__)
 # line (see `tests/integration/helpers/cluster.py`).
 EXPECTED_KILL_FATAL = "Child process was terminated by signal 9 (KILL)"
 
+# `grep_in_log` globs `<filename>*`, and `clickhouse-server.err.log` does not match
+# `clickhouse-server.log*`, so the default filename alone leaves the error log unscanned.
+SERVER_LOG_FILES = ("clickhouse-server.log", "clickhouse-server.err.log")
+
+
+def grep_server_logs(server, substring: str) -> list[str]:
+    """Grep both server log families. They are not interchangeable: only the main log
+    rotates on size as well as on every restart, so it purges the oldest history first and
+    can lose a fatal that the error log, holding the same `<count>` of files, still has.
+    """
+    lines = []
+    for filename in SERVER_LOG_FILES:
+        lines.extend(
+            server.grep_in_log(
+                substring, from_host=True, filename=filename
+            ).splitlines()
+        )
+    return lines
+
+
 # Set seed first
 seed = args.seed
 if seed == 0:
@@ -823,7 +843,7 @@ for server in servers:
             f"Server {server.name} did not shut down gracefully and had to be force killed"
         )
         good_exit = False
-    if server.grep_in_log("Logical error:", from_host=True):
+    if grep_server_logs(server, "Logical error:"):
         logging.error(f"Logical error in instance '{server.name}'")
         good_exit = False
     # `grep_in_log` reads the rotated logs too, so the expected kill fatals from every
@@ -831,7 +851,7 @@ for server in servers:
     # dropping the whole match: a genuine fatal logged next to one must still fail the run.
     unexpected_fatals = [
         line
-        for line in server.grep_in_log("<Fatal>", from_host=True).splitlines()
+        for line in grep_server_logs(server, "<Fatal>")
         if line.strip() and EXPECTED_KILL_FATAL not in line
     ]
     if unexpected_fatals:

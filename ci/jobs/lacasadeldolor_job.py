@@ -666,9 +666,11 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
             r"|Out of memory: Killed process"
             r"|Server died"
             r"|Received signal (?:SIGSEGV|SIGABRT|SIGKILL|6|9|11)"
-            # A server that vanished with no exec ID logs no exit code at all, so
-            # this is the only evidence it died (dolor.py checks the pid first).
-            r"|is unexpectedly gone with no exec ID"
+            # A server that vanished leaving no exit information logs no exit code at
+            # all, so this is the only evidence it died (dolor.py checks the pid first).
+            # Only the stable part of that message is matched, because the tail naming
+            # what was missing has already been reworded once.
+            r"|is unexpectedly gone"
         )
         # `dolor.py` inspects the ClickHouse exec of every node on shutdown and logs
         # "The server node0 exited with code: 137". Collect those codes so the sanitizer
