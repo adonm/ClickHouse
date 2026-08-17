@@ -224,18 +224,34 @@ def _classify_rotated_logs(
     # `-z` because rotation gzips all but the newest file, and a report in a `.gz` is
     # exactly the one this looks for. The second `rg` filters the already-decompressed
     # pipe, so it needs no `-z`.
-    if Shell.get_output(
-        f"rg -z --text '{SANITIZER_NON_OOM_PATTERN}' {paths_to_scan}"
+    # `-H` so the surviving lines name their file: which file matched is what the parser
+    # has to be pointed at, see below.
+    genuine_matches = Shell.get_output(
+        f"rg -z --text -H '{SANITIZER_NON_OOM_PATTERN}' {paths_to_scan}"
         f" | rg --text -v '{SANITIZER_OOM_PATTERN}'"
-    ):
+    )
+    if genuine_matches:
         print("Genuine failure found in a rotated log")
+        # Hand the parser only the files that survived the OOM filter. `rotated_logs` is
+        # newest-first and the parser's signal search returns the first match in list order
+        # without excluding the expected restart kill, so passing the whole list lets a
+        # newer deliberate `Child process was terminated by signal 9 (KILL)` outrank the
+        # older genuine signal this branch exists to preserve.
+        by_path = {str(p): p for p in rotated_logs}
+        genuine_logs: list[Path] = []
+        for line in genuine_matches.splitlines():
+            path = by_path.get(line.split(":", 1)[0])
+            if path is not None and path not in genuine_logs:
+                genuine_logs.append(path)
+        if not genuine_logs:
+            genuine_logs = rotated_logs
         # Rotated stderr logs are passed as `server_logs`: `parse_failure` searches
         # `stderr_logs + server_logs` for a sanitizer report either way, and none of these
         # files is the current log of a node that `stderr_logs` pairs up by index.
         # `fuzzer_out` is what the reproduce commands are built from, so it goes in here
         # exactly as `analyze_job_logs` passes it for a current-log failure.
         name, description, files = FuzzerLogParser(
-            server_logs=rotated_logs, fuzzer_log=fuzzer_out
+            server_logs=genuine_logs, fuzzer_log=fuzzer_out
         ).parse_failure()
         if not name:
             # Nothing nameable despite the signal - let the caller report its own error.
