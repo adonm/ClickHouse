@@ -556,7 +556,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
 --client-config={buzzconfig}
 --log-path={dolor_log}
 --timeout=30 --server-settings-prob=0
---kill-server-prob=50 --without-monitoring
+--kill-server-prob=50 --without-monitoring --without-transactions
 --replica-values={','.join(str(i) for i in range(number_of_nodes))}
 --shard-values={','.join(str(1) for _ in range(number_of_nodes))}
 --add-remote-server-settings-prob=0
