@@ -38,6 +38,10 @@ EXPECTED_KILL_FATAL = "Child process was terminated by signal 9 (KILL)"
 # escalate a graceful shutdown to a `SIGKILL`. That exit is 137 too, so the code alone
 # cannot tell a hung shutdown from a kernel OOM - only this message can.
 FORCED_STOP_MESSAGE = "did not shut down gracefully and had to be force killed"
+# The other way a stop can fail: `stop_clickhouse` returns with the process still up, so it
+# never reaches the force-kill above and logs no message of its own (its broad `except` does
+# this). `dolor.py` fails the run on it, and it leaves no exit code to collapse either.
+STOP_FAILED_MESSAGE = "is still running after stop command"
 
 
 def collapse_server_exit_code(
@@ -133,14 +137,18 @@ def parse_args():
 
 
 def _dolor_instances_dir() -> str:
-    """Mirror ClickHouseCluster.get_instances_dir('dolor') so the path matches even
-    when INTEGRATION_TESTS_RUN_ID is set and the actual directory becomes
-    _instances-dolor-{run_id}."""
-    name = "_instances-dolor"
-    run_id = os.environ.get("INTEGRATION_TESTS_RUN_ID", "")
-    if run_id:
-        name += "-" + run_id
-    return f"{repo_dir}/tests/casa_del_dolor/{name}"
+    """Where `ClickHouseCluster` put the per-node directories for the `dolor` cluster.
+
+    Ask the cluster helper rather than rebuilding the name here: it quotes
+    `INTEGRATION_TESTS_RUN_ID`, which `--run-id` passes through verbatim, so any open-coded
+    copy silently looks in the wrong place for a run id needing quoting - and drifts again
+    the next time the naming changes. Imported lazily because `helpers.cluster` pulls in the
+    whole integration-test dependency set, which exists in the runner image (`dolor.py`
+    imports it too) but not everywhere this module is imported from.
+    """
+    from tests.integration.helpers.cluster import get_instances_dir
+
+    return f"{repo_dir}/tests/casa_del_dolor/{get_instances_dir('dolor')}"
 
 
 def get_node_container_logs(node_index: int):
@@ -264,6 +272,7 @@ def _classify_failed_run(
     fuzzer_out: Path,
     sw: Utils.Stopwatch,
     forced_stop: bool = False,
+    stop_failed: bool = False,
 ) -> tuple[Result | None, str | None]:
     """Decide what a non-zero `dolor.py` exit means when `analyze_job_logs` returned OK.
 
@@ -301,6 +310,14 @@ def _classify_failed_run(
         failed_result = Result.create_from(
             status=Result.Status.FAIL,
             info="A server did not shut down gracefully and had to be force killed. Check fuzzer.log.",
+            stopwatch=sw,
+        )
+    # A stop that left the server running is the same kind of teardown failure, and it is even
+    # less visible: no force-kill message, and no exit code for the node that never stopped.
+    if failed_result is None and stop_failed:
+        failed_result = Result.create_from(
+            status=Result.Status.FAIL,
+            info="A server was still running after the stop command. Check fuzzer.log.",
             stopwatch=sw,
         )
     if failed_result is None and not benign_downgrade:
@@ -655,6 +672,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
 
     server_died = False
     forced_stop = False
+    stop_failed = False
     fuzzer_exit_code = 0
     node_exit_codes: list[int] = []
     try:
@@ -694,6 +712,8 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
                     node_exit_codes.append(int(e.group(1)))
                 if FORCED_STOP_MESSAGE in line:
                     forced_stop = True
+                if STOP_FAILED_MESSAGE in line:
+                    stop_failed = True
     except Exception:
         Result.create_from(
             status=Result.Status.ERROR,
@@ -705,6 +725,8 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
 
     if forced_stop:
         print("A server had to be force killed on shutdown - not a kernel OOM")
+    if stop_failed:
+        print("A server was still running after the stop command")
     server_exit_code = collapse_server_exit_code(node_exit_codes, forced_stop)
     # An abnormal exit code IS the server dying, and a pure kernel OOM logs no message
     # the patterns above match, so derive the flag rather than string-match for it.
@@ -778,7 +800,7 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
     )
     if not cmd_ok and result.is_ok():
         failed_result, info_override = _classify_failed_run(
-            result.info, rotated_logs, buzz_out, sw, forced_stop
+            result.info, rotated_logs, buzz_out, sw, forced_stop, stop_failed
         )
         if info_override:
             print(info_override)
