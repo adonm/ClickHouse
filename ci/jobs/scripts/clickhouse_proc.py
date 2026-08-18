@@ -993,14 +993,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             )
         )
 
-        def pick_latest_file(pattern: str) -> Path | None:
-            log_dir = Path(self.log_dir)
-            candidates = list(log_dir.glob(pattern))
-            candidates = [p for p in candidates if p.is_file()]
-            if not candidates:
-                return None
-            return max(candidates, key=lambda p: p.stat().st_mtime)
-
         def pick_all_files(pattern: str) -> list[Path]:
             log_dir = Path(self.log_dir)
             return sorted(
@@ -1047,12 +1039,20 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             f"cd {self.log_dir} && rg -z --text --no-filename '<Fatal>' clickhouse-server*.log* 2>/dev/null | head -n 1 || true"
         )
         if sanitizer_hits or fatal_hits:
-            server_log = (
-                pick_file_with("clickhouse-server*.err.log*", "<Fatal>")
-                or pick_file_with("clickhouse-server*.log*", "<Fatal>")
-                or pick_latest_file("clickhouse-server*.err.log*")
-                or pick_latest_file("clickhouse-server*.log*")
-            )
+            # Every server log, not just the one that won the prefilter. Handing the parser a
+            # single file defeats `EXPECTED_PATTERNS`: it can only defer a node's expected
+            # `Child process was terminated by signal 9 (KILL)` in favour of another node's real
+            # crash if it is given both. `clickhouse-server*.log*` already globs the `.err.log*`
+            # files, and the `<Fatal>` one is moved to the front so that when several qualify the
+            # name, stack trace and STID come from it - the same ordering `stderr_logs` gets below.
+            server_logs = pick_all_files("clickhouse-server*.log*")
+            matched_server = pick_file_with(
+                "clickhouse-server*.err.log*", "<Fatal>"
+            ) or pick_file_with("clickhouse-server*.log*", "<Fatal>")
+            if matched_server:
+                server_logs = [matched_server] + [
+                    p for p in server_logs if p != matched_server
+                ]
             # `sanitizer_hits` greps every stderr*.log*, so the parser has to see every one
             # of them, not just the newest: a node that died on a sanitizer report stops
             # writing and ends up with the OLDEST mtime, exactly as `pick_file_with` notes
@@ -1066,7 +1066,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 stderr_logs = [matched_stderr] + [
                     p for p in stderr_logs if p != matched_stderr
                 ]
-            if not (server_log or stderr_logs):
+            if not (server_logs or stderr_logs):
                 results.append(
                     Result.create_from(
                         name="Sanitizer assert or Fatal messages in server logs",
@@ -1083,7 +1083,7 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                     # missing sources instead of trying to open the literal
                     # path "None".
                     log_parser = FuzzerLogParser(
-                        server_logs=[server_log] if server_log else None,
+                        server_logs=server_logs or None,
                         stderr_logs=stderr_logs or None,
                     )
                     name, description, files = log_parser.parse_failure()

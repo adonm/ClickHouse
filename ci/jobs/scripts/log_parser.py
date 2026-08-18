@@ -142,6 +142,10 @@ class FuzzerLogParser:
         # Likewise for the log a sanitizer report matched in, so its stack trace is taken
         # from the node that actually failed rather than whichever file comes first.
         self._matched_sanitizer_log = None
+        # The matched report's own first line. One log can hold several reports and the match
+        # is not always the first (an OOM ahead of it is skipped), so the file alone does not
+        # say which one to extract - without this the trace and STID come from the wrong report.
+        self._matched_sanitizer_anchor = None
 
     # ------------------------------------------------------------------
     # Helpers to search across all log files
@@ -399,6 +403,11 @@ class FuzzerLogParser:
 
         self._matched_server_log = matched_server_log
         self._matched_sanitizer_log = matched_sanitizer_log
+        # `rg -o` prints the matched text, so the first output line locates the matched report
+        # inside its file. Taken before the window is trimmed below.
+        self._matched_sanitizer_anchor = (
+            error_output.splitlines()[0].strip() if matched_sanitizer_log else None
+        )
 
         error_lines = error_output.splitlines()
         result_name = error_lines[0].removesuffix(".")
@@ -579,7 +588,11 @@ class FuzzerLogParser:
         # Extract the full sanitizer report: description, all stack traces,
         # origin chains (e.g. "Uninitialized value was created by..."),
         # and the SUMMARY line.
-        def _extract_sanitizer_trace(log_file):
+        def _extract_sanitizer_trace(log_file, anchor=None):
+            # *anchor* is the matched report's own text: extraction skips everything before it,
+            # so a report earlier in the same file (typically a skipped OOM) does not supply the
+            # trace for the one that was actually reported. Only the matched log gets one; the
+            # fallback logs below are scanned from the top as before.
             ansi_escape = re.compile(r"\x1b\[[0-9;]*m")
             sanitizer_start = re.compile(
                 r"(==\d+==\s*)?(ERROR|WARNING): \w+Sanitizer:|"
@@ -599,10 +612,19 @@ class FuzzerLogParser:
             is_runtime_error = False
             is_check_failed_report = False
             consecutive_blank = 0
+            # The anchor is compared after stripping ANSI codes, the same way the lines are.
+            reached_anchor = not anchor
+            clean_anchor = ansi_escape.sub("", anchor) if anchor else None
 
             for line in all_lines:
                 clean_line = ansi_escape.sub("", line)
                 stripped = clean_line.strip()
+
+                if not reached_anchor:
+                    # Fall through on the anchor line itself, so it can open the report.
+                    if clean_anchor not in clean_line:
+                        continue
+                    reached_anchor = True
 
                 if not in_report:
                     if sanitizer_start.search(clean_line):
@@ -652,7 +674,9 @@ class FuzzerLogParser:
                 logs_to_search.append(log)
 
         for log in logs_to_search:
-            lines = _extract_sanitizer_trace(log)
+            # Only the matched log knows which of its reports was reported.
+            anchor = self._matched_sanitizer_anchor if log == matched else None
+            lines = _extract_sanitizer_trace(log, anchor)
             if lines:
                 return "\n".join(lines)
 
