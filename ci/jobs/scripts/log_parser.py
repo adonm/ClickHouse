@@ -9,12 +9,16 @@ from pathlib import Path
 sys.path.append(".")
 from ci.praktika.utils import Shell
 
+# The SIGKILL that ends every run - Dolor's own teardown, a restart, or the OOM killer.
+# A healthy node logs it too, so it is an expected line rather than a failure of its own.
+EXPECTED_KILL_PATTERN = "Child process was terminated by signal 9"
+
 # A sanitizer report that is an out-of-memory rather than a bug. Defined here, not in the
 # job scripts, because the parser has to recognise one to keep it from masking a real
 # failure; `ast_fuzzer_job` re-exports it for the OOM classifier.
 SANITIZER_OOM_PATTERN = (
     "Sanitizer:? (out-of-memory|out of memory|failed to allocate)"
-    "|Child process was terminated by signal 9"
+    f"|{EXPECTED_KILL_PATTERN}"
 )
 
 
@@ -66,7 +70,8 @@ class FuzzerLogParser:
             # Only the fatal handler prefixes the line with "(from thread N)" (the
             # "(no query)"/"(query_id: ...)" segment may sit in between). A bare
             # "Received signal 15" is a healthy node's routine SIGTERM during Dolor
-            # cleanup/restarts and must not win over another node's crash.
+            # cleanup/restarts and must not win over another node's crash. The kill
+            # half is an expected line, deferred via `EXPECTED_PATTERNS` below.
             r"\(from thread \d+\).*Received signal.*|.*Child process was terminated by signal 9.*",
         ),
         (
@@ -75,6 +80,14 @@ class FuzzerLogParser:
             r".*\(total\) memory limit exceeded.*",
         ),
     ]
+    # Lines a healthy run produces too, keyed by their failure name in `ERROR_PATTERNS`.
+    # A match on one is deferred: `parse_failure` keeps looking and settles for it only if
+    # nothing else matched anywhere, so a benign OOM report or the end-of-run SIGKILL on
+    # one node never outranks another node's real crash.
+    EXPECTED_PATTERNS = {
+        "Sanitizer": SANITIZER_OOM_PATTERN,
+        "Signal": EXPECTED_KILL_PATTERN,
+    }
     SQL_COMMANDS = [
         "SELECT",
         "INSERT",
@@ -293,15 +306,16 @@ class FuzzerLogParser:
         matched_pattern = None
         matched_log_file = None
         matched_sanitizer_log = None
-        # A stderr.log holding nothing but an OOM report. Held aside rather than reported,
-        # so the server-log patterns below still get their turn and a real crash on another
-        # node wins; settled for only if nothing else matches at all.
-        oom_only_match = None
+        # The first match that only ever hit an `EXPECTED_PATTERNS` line. Held aside rather
+        # than reported, so the patterns below still get their turn and a real crash on
+        # another node wins; settled for only if nothing else matches at all.
+        expected_only_match = None
         # Track which server log matched so downstream helpers search it first.
         matched_server_log = self.server_logs[0] if self.server_logs else None
         for name, flag_name, pattern in self.ERROR_PATTERNS:
             output = ""
             file = None
+            expected_pattern = self.EXPECTED_PATTERNS.get(name)
             if self.stack_trace_str:
                 output = Shell.get_output(
                     f"echo '{self.stack_trace_str}' | rg --text -A 10 -o '{pattern}' | head -n10",
@@ -323,14 +337,14 @@ class FuzzerLogParser:
                     # classifier already refuses to pass the run when any node has a
                     # genuine one, so reporting the OOM would bucket it under the
                     # wrong issue and lose the real stack trace.
-                    output, file, oom_only = self._rg_first_match(
+                    output, file, expected_only = self._rg_first_match(
                         pattern,
                         sanitizer_logs,
-                        exclude_pattern=SANITIZER_OOM_PATTERN,
+                        exclude_pattern=expected_pattern,
                     )
-                    if oom_only:
-                        if oom_only_match is None:
-                            oom_only_match = (output, file, pattern)
+                    if expected_only:
+                        if expected_only_match is None:
+                            expected_only_match = (output, file, pattern, flag_name)
                         continue
                     matched_sanitizer_log = file
                     if file is not None and file in self.server_logs:
@@ -338,7 +352,13 @@ class FuzzerLogParser:
                 else:
                     if not self.server_logs:
                         continue
-                    output, file, _ = self._rg_first_match(pattern, self.server_logs)
+                    output, file, expected_only = self._rg_first_match(
+                        pattern, self.server_logs, exclude_pattern=expected_pattern
+                    )
+                    if expected_only:
+                        if expected_only_match is None:
+                            expected_only_match = (output, file, pattern, flag_name)
+                        continue
                     if file:
                         matched_server_log = file
 
@@ -358,11 +378,17 @@ class FuzzerLogParser:
                     is_memory_limit_exceeded = True
                 break
 
-        if not error_output and oom_only_match is not None:
-            # Nothing else matched anywhere, so the OOM report is the whole story.
-            error_output, matched_log_file, matched_pattern = oom_only_match
-            matched_sanitizer_log = matched_log_file
-            is_sanitizer_error = True
+        if not error_output and expected_only_match is not None:
+            # Nothing else matched anywhere, so the expected line is the whole story.
+            error_output, matched_log_file, matched_pattern, deferred_flag = (
+                expected_only_match
+            )
+            is_sanitizer_error = deferred_flag == "is_sanitizer_error"
+            is_killed_by_signal = deferred_flag == "is_killed_by_signal"
+            if is_sanitizer_error:
+                matched_sanitizer_log = matched_log_file
+            if matched_log_file in self.server_logs:
+                matched_server_log = matched_log_file
 
         if not error_output:
             return (

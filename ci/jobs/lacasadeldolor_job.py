@@ -232,11 +232,9 @@ def _classify_rotated_logs(
     )
     if genuine_matches:
         print("Genuine failure found in a rotated log")
-        # Hand the parser only the files that survived the OOM filter. `rotated_logs` is
-        # newest-first and the parser's signal search returns the first match in list order
-        # without excluding the expected restart kill, so passing the whole list lets a
-        # newer deliberate `Child process was terminated by signal 9 (KILL)` outrank the
-        # older genuine signal this branch exists to preserve.
+        # Hand the parser only the files that survived the OOM filter. It defers the expected
+        # `Child process was terminated by signal 9 (KILL)` on its own now, but this filter is
+        # the wider net, so it still points the parser at the file holding the genuine report.
         by_path = {str(p): p for p in rotated_logs}
         genuine_logs: list[Path] = []
         for line in genuine_matches.splitlines():
