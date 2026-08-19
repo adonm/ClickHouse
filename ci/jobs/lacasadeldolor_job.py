@@ -482,6 +482,9 @@ def main():
 
     temp_dir = Path(f"{Utils.cwd()}/ci/tmp/")
     workspace_path = temp_dir / "workspace"
+    # Wipe leftovers from a previous seed so a rerun in the same checkout doesn't pick
+    # up a stale rotated log or core via the glob-based post-processing below.
+    shutil.rmtree(workspace_path, ignore_errors=True)
     workspace_path.mkdir(parents=True, exist_ok=True)
 
     session_seed = secrets.randbits(64)
