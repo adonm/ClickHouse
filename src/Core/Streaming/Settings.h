@@ -38,10 +38,4 @@ public:
 };
 using StreamSettingsPtr = std::shared_ptr<StreamSettings>;
 
-///////////////////////////////////////////////////////////////////////////////////
-bool isIdleExpired(
-    const std::chrono::steady_clock::time_point & now,
-    const std::chrono::steady_clock::time_point & last_active,
-    const WatermarkSettingsPtr & watermark);
-
 }
