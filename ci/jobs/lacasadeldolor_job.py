@@ -322,24 +322,44 @@ def _classify_failed_run(
     # A forced shutdown leaves no report anywhere and is a failure in its own right, not
     # something a benign OOM verdict explains: `collapse_server_exit_code` already withheld its
     # 137 from the kernel-OOM heuristic, so it overrides `benign_downgrade` instead of yielding.
+    # Both teardown failures go out as a named sub-result, so the report shows a failed
+    # row naming what broke instead of only job-level info text next to green rows.
     if failed_result is None and forced_stop:
         failed_result = Result.create_from(
-            status=Result.Status.FAIL,
-            info="A server did not shut down gracefully and had to be force killed. Check fuzzer.log.",
+            results=[
+                Result(
+                    name="Server shutdown",
+                    info="A server did not shut down gracefully and had to be force killed. Check fuzzer.log.",
+                    status=Result.Status.FAIL,
+                )
+            ],
+            info="A server did not shut down gracefully and had to be force killed",
             stopwatch=sw,
         )
     # A stop that left the server running is the same kind of teardown failure, and it is even
     # less visible: no force-kill message, and no exit code for the node that never stopped.
     if failed_result is None and stop_failed:
         failed_result = Result.create_from(
-            status=Result.Status.FAIL,
-            info="A server was still running after the stop command. Check fuzzer.log.",
+            results=[
+                Result(
+                    name="Server shutdown",
+                    info="A server was still running after the stop command. Check fuzzer.log.",
+                    status=Result.Status.FAIL,
+                )
+            ],
+            info="A server was still running after the stop command",
             stopwatch=sw,
         )
     if failed_result is None and not benign_downgrade:
         failed_result = Result.create_from(
-            status=Result.Status.FAIL,
-            info="dolor.py exited with non-zero code but no specific error was identified. Check fuzzer.log.",
+            results=[
+                Result(
+                    name="Unclassified failure",
+                    info="dolor.py exited with non-zero code but no specific error was identified. Check fuzzer.log.",
+                    status=Result.Status.FAIL,
+                )
+            ],
+            info="dolor.py exited with non-zero code but no specific error was identified",
             stopwatch=sw,
         )
     if failed_result is not None:
@@ -688,8 +708,14 @@ python3 {repo_dir}/tests/casa_del_dolor/dolor.py --seed={session_seed} --generat
             tb_start = tail.rfind("Traceback (most recent call last):")
             tb_snippet = tail[tb_start:].strip()
             Result.create_from(
-                status=Result.Status.FAIL,
-                info=f"Python exception in dolor.py:\n{tb_snippet}",
+                results=[
+                    Result(
+                        name="dolor.py exception",
+                        info=f"Python exception in dolor.py:\n{tb_snippet}",
+                        status=Result.Status.FAIL,
+                    )
+                ],
+                info="Python exception in dolor.py",
                 files=[str(p) for p in paths if p.exists() and p.stat().st_size > 0],
                 stopwatch=sw,
             ).complete_job()

@@ -493,6 +493,16 @@ def analyze_job_logs(
                 print("WARNING: dmesg not enabled")
 
     results = []
+    if oracle_finding:
+        # A named row, so the report shows what failed instead of only job-level info,
+        # and CIDB gets a stable test name to aggregate on. The verbatim line is the info.
+        results.append(
+            Result(
+                name="BuzzHouse oracle failure",
+                info=oracle_error,
+                status=Result.Status.FAIL,
+            )
+        )
     if is_failed and status != Result.Status.ERROR and not oracle_finding:
         # died server - lets fetch failure from log
         fuzzer_log_parser = FuzzerLogParser(
