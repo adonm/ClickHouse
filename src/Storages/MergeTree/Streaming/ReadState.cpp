@@ -71,6 +71,7 @@ void ReadState::updatePartitionSet(const ClassifiedPartitions & partitions)
     table_partitions.insert_range(partitions.unchanged_partitions);
     table_partitions.insert_range(partitions.idle_partitions);
 
+    std::erase_if(partition_cursors, [&](const auto & entry) { return !table_partitions.contains(entry.first); });
     std::erase_if(partition_last_read_time, [&](const auto & entry) { return !table_partitions.contains(entry.first); });
     std::erase_if(partition_watermarks, [&](const auto & entry) { return !table_partitions.contains(entry.first); });
     std::erase_if(reported_idle_partitions, [&](const auto & partition_id) { return !table_partitions.contains(partition_id); });
@@ -78,11 +79,11 @@ void ReadState::updatePartitionSet(const ClassifiedPartitions & partitions)
     const auto now = std::chrono::steady_clock::now();
     for (const auto & partition_id : table_partitions)
     {
-        bool added_partition = partition_cursors.try_emplace(partition_id, PartitionCursor{}).second
-                            || partition_last_read_time.try_emplace(partition_id, now).second
-                            || partition_watermarks.try_emplace(partition_id, last_emitted_watermark).second;
+        const bool added_cursor = partition_cursors.try_emplace(partition_id, PartitionCursor{}).second;
+        const bool added_read_time = partition_last_read_time.try_emplace(partition_id, now).second;
+        const bool added_watermark = partition_watermarks.try_emplace(partition_id, last_emitted_watermark).second;
 
-        if (added_partition)
+        if (added_cursor || added_read_time || added_watermark)
             emitted_source_idle = false;
     }
 }
