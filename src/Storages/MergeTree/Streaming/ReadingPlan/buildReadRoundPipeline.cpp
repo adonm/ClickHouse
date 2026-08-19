@@ -117,16 +117,6 @@ Pipe buildPartitionReadingPipeline(
         cursor_filter.column_name,
         cursor_filter.do_remove_column));
 
-    /// Add prewhere built from the outer query analysis.
-    if (prewhere_info)
-    {
-        plan->addStep(std::make_unique<FilterStep>(
-            plan->getCurrentHeader(),
-            prewhere_info->prewhere_actions.clone(),
-            prewhere_info->prewhere_column_name,
-            prewhere_info->remove_prewhere_column));
-    }
-
     /// Commit-order sort (_block_number, _block_offset); skipped for unordered streams (ordering holds only between rounds).
     if (!stream_settings.unordered)
     {
@@ -151,6 +141,16 @@ Pipe buildPartitionReadingPipeline(
         plan->addStep(std::make_unique<CalculateWatermarksStep>(plan->getCurrentHeader(), stream_settings.watermark, context));
         plan->addStep(std::make_unique<RaiseWatermarksStep>(plan->getCurrentHeader(), state.getPartitionWatermark(partition_id)));
         plan->addStep(std::make_unique<StampPartitionWatermarksStep>(plan->getCurrentHeader(), partition_id));
+    }
+
+    /// Add filter built from the outer query analysis.
+    if (prewhere_info)
+    {
+        plan->addStep(std::make_unique<FilterStep>(
+            plan->getCurrentHeader(),
+            prewhere_info->prewhere_actions.clone(),
+            prewhere_info->prewhere_column_name,
+            prewhere_info->remove_prewhere_column));
     }
 
     /// Add projection to required header.
