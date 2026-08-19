@@ -3,21 +3,14 @@
 #include <Processors/Port.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/StorageID.h>
+#include <Interpreters/Streaming/Utils.h>
 
-#include <Analyzer/Resolve/QueryAnalyzer.h>
-#include <Analyzer/QueryTreeBuilder.h>
-#include <Analyzer/TableNode.h>
 
-#include <Planner/CollectTableExpressionData.h>
-#include <Planner/PlannerContext.h>
-#include <Planner/Utils.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Processors/Streaming/CalculateWatermarksTransform.h>
 
-#include <Storages/StorageDummy.h>
 
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -42,30 +35,6 @@ ITransformingStep::Traits getCalculatorTraits()
             .preserves_number_of_rows = false,
         },
     };
-}
-
-ActionsDAG buildWatermarkActionsDAG(
-    const ASTPtr & watermark_expression,
-    const Block & header,
-    const ContextPtr & context)
-{
-    chassert(watermark_expression);
-
-    auto execution_context = Context::createCopy(context);
-    auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, ColumnsDescription(header.getNamesAndTypesList()));
-    auto fake_table = std::make_shared<TableNode>(std::move(dummy_storage), execution_context);
-
-    auto expression = buildQueryTree(watermark_expression->clone(), execution_context);
-    QueryAnalyzer(/*only_analyze=*/true).resolve(expression, fake_table, execution_context);
-
-    auto planner_context = std::make_shared<PlannerContext>(
-        execution_context,
-        std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}),
-        SelectQueryOptions{});
-    collectSourceColumns(expression, planner_context, /*keep_alias_columns=*/false);
-
-    auto [dag, _] = buildActionsDAGFromExpressionNode(expression, header.getColumnsWithTypeAndName(), planner_context, {});
-    return std::move(dag);
 }
 
 }

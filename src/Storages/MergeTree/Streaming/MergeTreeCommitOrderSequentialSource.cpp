@@ -2,12 +2,14 @@
 #include <Storages/MergeTree/Streaming/PartitionsClassification.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionCursors.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionWatermarks.h>
+
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Parsers/IAST.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/Streaming/Utils.h>
 
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/printPipeline.h>
@@ -79,7 +81,7 @@ SelectQueryInfo makeStreamingSelectQueryInfo(SelectQueryInfo info)
     return info;
 }
 
-PrewhereInfoPtr makeStreamingPrewhereInfo(PrewhereInfoPtr info, const StreamSettings & stream_settings)
+PrewhereInfoPtr makeStreamingPrewhereInfo(PrewhereInfoPtr info, const StreamSettings & stream_settings, const MergeTreeData & storage, const ContextPtr & context)
 {
     if (!info)
         return nullptr;
@@ -96,10 +98,10 @@ PrewhereInfoPtr makeStreamingPrewhereInfo(PrewhereInfoPtr info, const StreamSett
     {
         patched_info->prewhere_actions.tryRestoreColumn(stream_settings.watermark->column);
 
-        IdentifierNameSet identifiers;
-        stream_settings.watermark->expression->collectIdentifierNames(identifiers);
-        for (const auto & identifier : identifiers)
-            patched_info->prewhere_actions.tryRestoreColumn(identifier);
+        const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
+        const auto source_columns = collectWatermarkSourceColumns(stream_settings.watermark->expression, metadata->getColumns().getAllPhysical(), context);
+        for (const auto & source_column : source_columns)
+            patched_info->prewhere_actions.tryRestoreColumn(source_column);
     }
 
     return patched_info;
@@ -134,7 +136,7 @@ MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
     , reading_context{
           .storage = storage_,
           .query_info = makeStreamingSelectQueryInfo(query_info_),
-          .prewhere_info = makeStreamingPrewhereInfo(query_info_.prewhere_info, stream_settings),
+          .prewhere_info = makeStreamingPrewhereInfo(query_info_.prewhere_info, stream_settings, storage_, context_),
           .stream_settings = stream_settings,
           .context = makeStreamingContext(std::move(context_)),
           .user_requested_columns = filterStreamingVirtualColumns(std::move(user_requested_columns_)),

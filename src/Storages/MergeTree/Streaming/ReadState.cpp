@@ -2,6 +2,8 @@
 #include <Storages/MergeTree/Streaming/PartitionsClassification.h>
 #include <Storages/MergeTree/Streaming/Cursors/CursorUtils.h>
 
+#include <Interpreters/Streaming/Utils.h>
+
 #include <utility>
 
 namespace DB

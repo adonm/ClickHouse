@@ -11,6 +11,7 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Streaming/Utils.h>
 
 #include <IO/WriteBufferFromString.h>
 
@@ -59,7 +60,7 @@ SelectQueryInfo makeSelectQueryInfoForPartitionRead(const SelectQueryInfo & init
     return info;
 }
 
-Names extendWithAuxiliaryColumns(Names columns, const StreamSettings & stream_settings)
+Names extendWithAuxiliaryColumns(Names columns, const StreamSettings & stream_settings, const StorageMetadataPtr & metadata, const ContextPtr & context)
 {
     for (const auto & aux_name : {PartitionIdColumn::name, BlockNumberColumn::name, BlockOffsetColumn::name})
         if (!std::ranges::contains(columns, aux_name))
@@ -70,11 +71,10 @@ Names extendWithAuxiliaryColumns(Names columns, const StreamSettings & stream_se
         if (!std::ranges::contains(columns, stream_settings.watermark->column))
             columns.push_back(stream_settings.watermark->column);
 
-        IdentifierNameSet identifiers;
-        stream_settings.watermark->expression->collectIdentifierNames(identifiers);
-        for (const auto & identifier : identifiers)
-            if (!std::ranges::contains(columns, identifier))
-                columns.push_back(identifier);
+        const auto source_columns = collectWatermarkSourceColumns(stream_settings.watermark->expression, metadata->getColumns().getAllPhysical(), context);
+        for (const auto & source_column : source_columns)
+            if (!std::ranges::contains(columns, source_column))
+                columns.push_back(source_column);
     }
 
     return columns;
@@ -186,7 +186,7 @@ std::optional<ReadRoundPipeline> buildReadRoundPipeline(
     /// Fresh storage snapshot reused by every per-partition subplan in this iteration.
     const auto metadata = reading_context.storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
     const auto storage_snapshot = reading_context.storage.getStorageSnapshot(metadata, context);
-    const auto columns_to_read = extendWithAuxiliaryColumns(reading_context.user_requested_columns, stream_settings);
+    const auto columns_to_read = extendWithAuxiliaryColumns(reading_context.user_requested_columns, stream_settings, metadata, context);
     const auto classification = classifyPartitions(state, safe_block_numbers, stream_settings);
     const QueryPlanOptimizationSettings opt_settings(context);
 
