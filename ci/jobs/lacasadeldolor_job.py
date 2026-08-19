@@ -405,7 +405,7 @@ def main():
                     break
             else:
                 raise FileNotFoundError(
-                    "Clickhouse binary not found in any of the paths: "
+                    "ClickHouse binary not found in any of the paths: "
                     + ", ".join(paths_to_check)
                     + ". You can also specify path to binary via --path argument"
                 )
@@ -413,7 +413,7 @@ def main():
             clickhouse_server_config_dir = args.path_1
     assert Path(
         clickhouse_server_config_dir
-    ).exists(), f"Clickhouse config dir does not exist [{clickhouse_server_config_dir}]"
+    ).exists(), f"ClickHouse config dir does not exist [{clickhouse_server_config_dir}]"
     print(f"Using ClickHouse binary at [{clickhouse_path}]")
 
     Shell.check(f"chmod +x {clickhouse_path}", verbose=True, strict=True)
