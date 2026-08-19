@@ -29,7 +29,6 @@
 #include <Common/Epoll.h>
 
 #include <base/defines.h>
-#include <sys/epoll.h>
 
 #include <algorithm>
 #include <memory>
