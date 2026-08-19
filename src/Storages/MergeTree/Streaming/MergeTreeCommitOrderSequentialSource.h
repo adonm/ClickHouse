@@ -63,13 +63,9 @@ private:
     ReadState read_state;
     int64_t finished_rounds = 0;
 
-    /// Current read round runtime information
-    Processors current_sub_pipeline;
-    std::unique_ptr<QueryPlanResourceHolder> current_resources;
-
     /// Reconfiguration
-    std::optional<Pipe> pending_round;
-    std::unique_ptr<QueryPlanResourceHolder> pending_resources;
+    std::optional<ReadRoundPipeline> current_round;
+    std::optional<ReadRoundPipeline> pending_round;
 };
 
 }

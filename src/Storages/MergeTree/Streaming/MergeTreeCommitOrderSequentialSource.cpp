@@ -220,7 +220,7 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration(c
     if (read_state.hasWork(partitions))
         return Status::Ready;
 
-    if (!current_sub_pipeline.empty())
+    if (current_round.has_value())
         return Status::UpdatePipeline;
 
     return Status::Async;
@@ -320,13 +320,9 @@ void MergeTreeCommitOrderSequentialSource::work()
     read_state.updatePartitionSet(classification);
     read_state.startReadRound(classification, safe_block_numbers);
 
-    auto result = buildReadRoundPipeline(reading_context, read_state, safe_block_numbers);
-    if (result)
-    {
-        LOG_TEST(log, "Built read round pipeline:\n{}", explainPipeline(result->pipe));
-        pending_round = std::move(result->pipe);
-        pending_resources = std::make_unique<QueryPlanResourceHolder>(std::move(result->resources));
-    }
+    pending_round = buildReadRoundPipeline(reading_context, read_state, safe_block_numbers);
+    if (pending_round.has_value())
+        LOG_TEST(log, "Built read round pipeline:\n{}", explainPipeline(pending_round->pipe));
 }
 
 std::tuple<int, uint32_t, Int64> MergeTreeCommitOrderSequentialSource::scheduleForEvent()
@@ -336,12 +332,12 @@ std::tuple<int, uint32_t, Int64> MergeTreeCommitOrderSequentialSource::scheduleF
 
 IProcessor::PipelineUpdate MergeTreeCommitOrderSequentialSource::updatePipeline()
 {
-    chassert(pending_round.has_value() || !current_sub_pipeline.empty());
+    chassert(pending_round.has_value() || current_round.has_value());
 
     PipelineUpdate update;
 
     /// Tear down the previous read round sub-pipeline.
-    if (!current_sub_pipeline.empty())
+    if (current_round.has_value())
     {
         chassert(!inputs.empty());
         chassert(inputs.front().isConnected());
@@ -350,33 +346,29 @@ IProcessor::PipelineUpdate MergeTreeCommitOrderSequentialSource::updatePipeline(
         auto & input = inputs.front();
         disconnect(input.getOutputPort(), input);
 
-        update.to_remove = std::exchange(current_sub_pipeline, {});
-        current_resources.reset();
+        update.to_remove = current_round->pipe.getProcessors();
+        current_round.reset();
     }
 
     /// Attach the next read round sub-pipeline if one is ready.
     if (pending_round.has_value())
     {
-        auto sub_pipe = std::exchange(pending_round, std::nullopt);
-        chassert(sub_pipe->numOutputPorts() == 1);
+        current_round = std::exchange(pending_round, std::nullopt);
+        chassert(current_round->pipe.numOutputPorts() == 1);
         LOG_TEST(log, "Connecting next read round sub-pipeline");
 
         if (inputs.empty())
             inputs.emplace_back(*header, this);
 
-        auto * sub_output = sub_pipe->getOutputPort(0);
-        auto sub_processors = Pipe::detachProcessors(std::move(sub_pipe.value()));
-        for (auto & processor : sub_processors)
+        for (const auto & processor : current_round->pipe.getProcessors())
             processor->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
 
         auto & input = inputs.front();
-        connect(*sub_output, input);
+        connect(*current_round->pipe.getOutputPort(0), input);
         input.reopen();
         input.setNeeded();
 
-        current_sub_pipeline = sub_processors;
-        current_resources = std::move(pending_resources);
-        update.to_add = std::move(sub_processors);
+        update.to_add = current_round->pipe.getProcessors();
     }
 
     return update;
