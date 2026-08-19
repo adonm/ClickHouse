@@ -172,9 +172,10 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleRunningPipeline()
         read_state.updatePartitionCursor(partition_cursor->partition_id, partition_cursor->cursor);
 
     if (auto partition_marker = chunk.getChunkInfos().extract<PartitionWatermarkInfo>())
-    {
         read_state.updatePartitionWatermark(partition_marker->partition_id, std::move(partition_marker->watermark));
 
+    if (chunk.getNumRows() == 0 && chunk.getChunkInfos().empty())
+    {
         /// The dropped chunk was the last one - the sub-pipeline is exhausted.
         if (input.isFinished())
             return Status::Finished;
