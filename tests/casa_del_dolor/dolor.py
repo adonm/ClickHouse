@@ -819,13 +819,30 @@ for server in servers:
             )
             exit_code = exec_info["ExitCode"]
         except Exception as ex:
-            logging.warning(
-                f"Could not inspect exec for {server.name} - already gone: {ex}"
-            )
+            # The exec is the only handle on how the server exited, so without it and
+            # without a recorded code there is nothing left to call the exit clean.
+            exit_code = server.clickhouse_last_exit_code
+            if exit_code is None:
+                logging.error(
+                    f"Could not inspect exec for {server.name} and no exit code was recorded: {ex}"
+                )
+                good_exit = False
+            else:
+                logging.warning(
+                    f"Could not inspect exec for {server.name}, falling back to the recorded exit code: {ex}"
+                )
     else:
         # `stop_clickhouse` drops the exec id once the process is gone, but reads the
         # exit code off it first.
         exit_code = server.clickhouse_last_exit_code
+        if exit_code is None and pid is not None:
+            # The server was alive and stopped on request, so a code should have been
+            # recorded; without one an abort during shutdown would go unnoticed. The
+            # `pid is None` case is already reported above.
+            logging.error(
+                f"Server {server.name} stopped without recording an exit code"
+            )
+            good_exit = False
     if exit_code is not None:
         logging.info(f"The server {server.name} exited with code: {exit_code}")
         good_exit = good_exit and exit_code in (

@@ -81,9 +81,10 @@ class FuzzerLogParser:
         ),
     ]
     # Lines a healthy run produces too, keyed by their failure name in `ERROR_PATTERNS`.
-    # A match on one is deferred: `parse_failure` keeps looking and settles for it only if
-    # nothing else matched anywhere, so a benign OOM report or the end-of-run SIGKILL on
-    # one node never outranks another node's real crash.
+    # A match on one is deferred: `parse_failure` keeps looking and never reports it on its
+    # own, so a benign OOM report or the end-of-run SIGKILL on one node neither outranks
+    # another node's real crash nor becomes a failure by itself. Callers that already know
+    # the run failed can name it with `parse_failure(allow_expected_only=True)`.
     EXPECTED_PATTERNS = {
         "Sanitizer": SANITIZER_OOM_PATTERN,
         "Signal": EXPECTED_KILL_PATTERN,
@@ -298,7 +299,10 @@ class FuzzerLogParser:
                 return ""
         return ""
 
-    def parse_failure(self):
+    def parse_failure(self, allow_expected_only=False):
+        """`allow_expected_only` lets a caller that already knows the run failed name it
+        after an `EXPECTED_PATTERNS` line. Off by default so a detector cannot turn a line
+        a healthy run emits into a failure of its own."""
         files = []
         is_logical_error = False
         is_sanitizer_error = False
@@ -312,7 +316,7 @@ class FuzzerLogParser:
         matched_sanitizer_log = None
         # The first match that only ever hit an `EXPECTED_PATTERNS` line. Held aside rather
         # than reported, so the patterns below still get their turn and a real crash on
-        # another node wins; settled for only if nothing else matches at all.
+        # another node wins; used only when the caller opted into naming a failure after it.
         expected_only_match = None
         # Track which server log matched so downstream helpers search it first.
         matched_server_log = self.server_logs[0] if self.server_logs else None
@@ -382,7 +386,7 @@ class FuzzerLogParser:
                     is_memory_limit_exceeded = True
                 break
 
-        if not error_output and expected_only_match is not None:
+        if allow_expected_only and not error_output and expected_only_match is not None:
             # Nothing else matched anywhere, so the expected line is the whole story.
             error_output, matched_log_file, matched_pattern, deferred_flag = (
                 expected_only_match

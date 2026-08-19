@@ -248,9 +248,11 @@ def _classify_rotated_logs(
         # files is the current log of a node that `stderr_logs` pairs up by index.
         # `fuzzer_out` is what the reproduce commands are built from, so it goes in here
         # exactly as `analyze_job_logs` passes it for a current-log failure.
+        # `genuine_matches` above already found a real report, so let an expected-only line
+        # name it if the parser's own patterns disagree with the filter, as before.
         name, description, files = FuzzerLogParser(
             server_logs=genuine_logs, fuzzer_log=fuzzer_out
-        ).parse_failure()
+        ).parse_failure(allow_expected_only=True)
         if not name:
             # Nothing nameable despite the signal - let the caller report its own error.
             return None, False

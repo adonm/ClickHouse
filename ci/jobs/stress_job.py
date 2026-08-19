@@ -372,7 +372,11 @@ def run_stress_test(upgrade_check: bool = False) -> None:
                     stderr_logs=[stderr_log] if stderr_log.exists() else None,
                 )
                 try:
-                    name, description, files = log_parser.parse_failure()
+                    # Reached only under `server_died or crash_evidence`, so an
+                    # expected-only line may name the failure as it did before.
+                    name, description, files = log_parser.parse_failure(
+                        allow_expected_only=True
+                    )
                     file_pair_info = f"Log files: {server_log_file.name}"
                     if stderr_log.exists():
                         file_pair_info += f", {stderr_log.name}"

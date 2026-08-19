@@ -500,7 +500,11 @@ def analyze_job_logs(
             stderr_logs=stderr_logs,
             fuzzer_log=fuzzer_out,
         )
-        parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
+        # `is_failed` above already decided the run failed, so an expected-only line may
+        # name it rather than losing the reason to "Unknown error".
+        parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure(
+            allow_expected_only=True
+        )
 
         if parsed_name:
             results.append(
