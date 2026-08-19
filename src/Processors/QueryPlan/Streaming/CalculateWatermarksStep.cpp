@@ -1,16 +1,11 @@
 #include <Processors/QueryPlan/Streaming/CalculateWatermarksStep.h>
-
+#include <Processors/Streaming/CalculateWatermarksTransform.h>
 #include <Processors/Port.h>
-
-#include <Interpreters/Context.h>
-#include <Interpreters/Streaming/Utils.h>
-
-
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
-#include <Processors/Streaming/CalculateWatermarksTransform.h>
-
+#include <Interpreters/Context.h>
+#include <Interpreters/Streaming/Utils.h>
 
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
