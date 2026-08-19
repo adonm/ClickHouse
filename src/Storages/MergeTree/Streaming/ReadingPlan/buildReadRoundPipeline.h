@@ -27,6 +27,7 @@ struct ReadRoundContext
     const MergeTreeData & storage;
     const SelectQueryInfo query_info;
     const PrewhereInfoPtr prewhere_info;
+    const FilterDAGInfoPtr row_level_filter;
     const StreamSettings stream_settings;
     const ContextPtr context;
     const Names user_requested_columns;

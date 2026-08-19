@@ -66,6 +66,7 @@ SelectQueryInfo makeStreamingSelectQueryInfo(SelectQueryInfo info)
 
     info.prewhere_info.reset();
     info.filter_actions_dag.reset();
+    info.row_level_filter.reset();
 
     info.order_optimizer.reset();
     info.input_order_info.reset();
@@ -81,28 +82,45 @@ SelectQueryInfo makeStreamingSelectQueryInfo(SelectQueryInfo info)
     return info;
 }
 
-PrewhereInfoPtr makeStreamingPrewhereInfo(PrewhereInfoPtr info, const StreamSettings & stream_settings, const MergeTreeData & storage, const ContextPtr & context)
+void restoreStreamingAuxiliaryColumns(ActionsDAG & actions, const StreamSettings & stream_settings, const MergeTreeData & storage, const ContextPtr & context)
+{
+    /// These columns are needed for cursor calculation.
+    actions.tryRestoreColumn(PartitionIdColumn::name);
+    actions.tryRestoreColumn(BlockNumberColumn::name);
+    actions.tryRestoreColumn(BlockOffsetColumn::name);
+
+    /// These columns are needed for watermark calculation.
+    if (stream_settings.watermark)
+    {
+        actions.tryRestoreColumn(stream_settings.watermark->column);
+
+        const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
+        const auto source_columns = collectWatermarkSourceColumns(stream_settings.watermark->expression, metadata->getColumns().getAllPhysical(), context);
+        for (const auto & source_column : source_columns)
+            actions.tryRestoreColumn(source_column);
+    }
+}
+
+PrewhereInfoPtr makeReadRoundPrewhereInfo(PrewhereInfoPtr info, const StreamSettings & stream_settings, const MergeTreeData & storage, const ContextPtr & context)
 {
     if (!info)
         return nullptr;
 
     auto patched_info = std::make_shared<PrewhereInfo>(info->clone());
+    restoreStreamingAuxiliaryColumns(patched_info->prewhere_actions, stream_settings, storage, context);
 
-    /// These columns are needed for cursor calculation.
-    patched_info->prewhere_actions.tryRestoreColumn(PartitionIdColumn::name);
-    patched_info->prewhere_actions.tryRestoreColumn(BlockNumberColumn::name);
-    patched_info->prewhere_actions.tryRestoreColumn(BlockOffsetColumn::name);
+    return patched_info;
+}
 
-    /// These columns are needed for watermark calculation.
-    if (stream_settings.watermark)
-    {
-        patched_info->prewhere_actions.tryRestoreColumn(stream_settings.watermark->column);
+FilterDAGInfoPtr makeReadRoundRowLevelFilter(FilterDAGInfoPtr info, const StreamSettings & stream_settings, const MergeTreeData & storage, const ContextPtr & context)
+{
+    if (!info)
+        return nullptr;
 
-        const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
-        const auto source_columns = collectWatermarkSourceColumns(stream_settings.watermark->expression, metadata->getColumns().getAllPhysical(), context);
-        for (const auto & source_column : source_columns)
-            patched_info->prewhere_actions.tryRestoreColumn(source_column);
-    }
+    auto patched_info = std::make_shared<FilterDAGInfo>(info->actions.clone(), info->column_name, info->do_remove_column);
+    restoreStreamingAuxiliaryColumns(patched_info->actions, stream_settings, storage, context);
+    for (const auto & required_column : patched_info->actions.getRequiredColumnsNames())
+        patched_info->actions.tryRestoreColumn(required_column);
 
     return patched_info;
 }
@@ -136,7 +154,8 @@ MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
     , reading_context{
           .storage = storage_,
           .query_info = makeStreamingSelectQueryInfo(query_info_),
-          .prewhere_info = makeStreamingPrewhereInfo(query_info_.prewhere_info, stream_settings, storage_, context_),
+          .prewhere_info = makeReadRoundPrewhereInfo(query_info_.prewhere_info, stream_settings, storage_, context_),
+          .row_level_filter = makeReadRoundRowLevelFilter(query_info_.row_level_filter, stream_settings, storage_, context_),
           .stream_settings = stream_settings,
           .context = makeStreamingContext(std::move(context_)),
           .user_requested_columns = filterStreamingVirtualColumns(std::move(user_requested_columns_)),

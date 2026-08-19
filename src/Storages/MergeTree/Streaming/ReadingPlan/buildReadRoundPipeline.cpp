@@ -42,25 +42,20 @@
 namespace DB
 {
 
+/// TODO: Split the read into
+///       1. A narrow stream (block_number, block_offset, watermark source columns) for cursor/watermark progress
+///       2. A wide stream with the predicate pushed down to the read,
+///       and do aligned join by (block_number, block_offset)
+
 namespace
 {
 
-SelectQueryInfo makeSelectQueryInfoForPartitionRead(const SelectQueryInfo & initial)
-{
-    SelectQueryInfo info = initial;
-
-    if (info.row_level_filter)
-    {
-        info.row_level_filter = std::make_shared<FilterDAGInfo>();
-        info.row_level_filter->actions = initial.row_level_filter->actions.clone();
-        info.row_level_filter->column_name = initial.row_level_filter->column_name;
-        info.row_level_filter->do_remove_column = initial.row_level_filter->do_remove_column;
-    }
-
-    return info;
-}
-
-Names extendWithAuxiliaryColumns(Names columns, const StreamSettings & stream_settings, const StorageMetadataPtr & metadata, const ContextPtr & context)
+Names extendWithAuxiliaryColumns(
+    Names columns,
+    const StreamSettings & stream_settings,
+    const FilterDAGInfoPtr & row_level_filter,
+    const StorageMetadataPtr & metadata,
+    const ContextPtr & context)
 {
     for (const auto & aux_name : {PartitionIdColumn::name, BlockNumberColumn::name, BlockOffsetColumn::name})
         if (!std::ranges::contains(columns, aux_name))
@@ -72,6 +67,14 @@ Names extendWithAuxiliaryColumns(Names columns, const StreamSettings & stream_se
             columns.push_back(stream_settings.watermark->column);
 
         const auto source_columns = collectWatermarkSourceColumns(stream_settings.watermark->expression, metadata->getColumns().getAllPhysical(), context);
+        for (const auto & source_column : source_columns)
+            if (!std::ranges::contains(columns, source_column))
+                columns.push_back(source_column);
+    }
+
+    if (row_level_filter)
+    {
+        const auto source_columns = row_level_filter->actions.getRequiredColumnsNames();
         for (const auto & source_column : source_columns)
             if (!std::ranges::contains(columns, source_column))
                 columns.push_back(source_column);
@@ -93,13 +96,13 @@ Pipe buildPartitionReadingPipeline(
     const auto & stream_settings = reading_context.stream_settings;
     const auto & context = reading_context.context;
     const auto & prewhere_info = reading_context.prewhere_info;
+    const auto & row_level_filter = reading_context.row_level_filter;
     const auto & output_header = reading_context.output_header;
 
-    auto partition_query_info = makeSelectQueryInfoForPartitionRead(reading_context.query_info);
     auto plan = MergeTreeDataSelectExecutor(reading_context.storage).read(
         inner_columns,
         storage_snapshot,
-        partition_query_info,
+        reading_context.query_info,
         context,
         reading_context.max_block_size,
         reading_context.requested_num_streams,
@@ -141,6 +144,16 @@ Pipe buildPartitionReadingPipeline(
         plan->addStep(std::make_unique<CalculateWatermarksStep>(plan->getCurrentHeader(), stream_settings.watermark, context));
         plan->addStep(std::make_unique<RaiseWatermarksStep>(plan->getCurrentHeader(), state.getPartitionWatermark(partition_id)));
         plan->addStep(std::make_unique<StampPartitionWatermarksStep>(plan->getCurrentHeader(), partition_id));
+    }
+
+    /// Add row policy filter built from the outer query analysis.
+    if (row_level_filter)
+    {
+        plan->addStep(std::make_unique<FilterStep>(
+            plan->getCurrentHeader(),
+            row_level_filter->actions.clone(),
+            row_level_filter->column_name,
+            row_level_filter->do_remove_column));
     }
 
     /// Add filter built from the outer query analysis.
@@ -186,7 +199,7 @@ std::optional<ReadRoundPipeline> buildReadRoundPipeline(
     /// Fresh storage snapshot reused by every per-partition subplan in this iteration.
     const auto metadata = reading_context.storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
     const auto storage_snapshot = reading_context.storage.getStorageSnapshot(metadata, context);
-    const auto columns_to_read = extendWithAuxiliaryColumns(reading_context.user_requested_columns, stream_settings, metadata, context);
+    const auto columns_to_read = extendWithAuxiliaryColumns(reading_context.user_requested_columns, stream_settings, reading_context.row_level_filter, metadata, context);
     const auto classification = classifyPartitions(state, safe_block_numbers, stream_settings);
     const QueryPlanOptimizationSettings opt_settings(context);
 
