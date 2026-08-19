@@ -1,38 +1,35 @@
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSequentialSource.h>
-#include <Storages/MergeTree/Streaming/StreamingChunkCursor.h>
-#include <Storages/MergeTree/Streaming/CursorUtils.h>
-#include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
+#include <Storages/MergeTree/Streaming/PartitionsClassification.h>
+#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionCursors.h>
+#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionWatermarks.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
-#include <Interpreters/ActionsDAG.h>
+#include <Parsers/IAST.h>
+
 #include <Interpreters/Context.h>
+
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/printPipeline.h>
 
 #include <IO/WriteBufferFromString.h>
 
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <QueryPipeline/printPipeline.h>
-
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/SortingStep.h>
-#include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
+#include <Processors/Streaming/Markers.h>
 
+#include <Core/UUID.h>
 #include <Core/Block.h>
-#include <Core/Settings.h>
-#include <Core/SortDescription.h>
+#include <Core/Streaming/Settings.h>
+#include <Core/Streaming/StreamingVirtualColumns.h>
 
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/Epoll.h>
 
 #include <base/defines.h>
+#include <sys/epoll.h>
 
 #include <algorithm>
 #include <memory>
@@ -43,222 +40,11 @@ namespace DB
 namespace
 {
 
-struct ClassifiedPartitions
-{
-    std::vector<std::string> readable_partitions;
-};
-
-ClassifiedPartitions getPartitionsClassification(
-    const std::map<String, Int64> & safe_block_numbers,
-    const std::map<String, PartitionCursor> & last_emitted_positions)
-{
-    ClassifiedPartitions classification;
-    for (const auto & [partition_id, safe_block_number] : safe_block_numbers)
-    {
-        if (!last_emitted_positions.contains(partition_id))
-            classification.readable_partitions.push_back(partition_id);
-
-        else if (last_emitted_positions.at(partition_id).block_number <= safe_block_number)
-            classification.readable_partitions.push_back(partition_id);
-    }
-
-    return classification;
-}
-
-std::string explainPlan(const QueryPlan & plan)
-{
-    WriteBufferFromOwnString plan_buffer;
-    ExplainPlanOptions explain_options{.header = true, .actions = true, .indexes = true, .compact = true, .pretty = true};
-    plan.explainPlan(plan_buffer, explain_options);
-    return plan_buffer.str();
-}
-
 std::string explainPipeline(const Pipe & pipe)
 {
-    WriteBufferFromOwnString pipeline_buffer;
-    printPipeline(pipe.getProcessors(), pipeline_buffer);
-    return pipeline_buffer.str();
-}
-
-struct PipeWithResources
-{
-    Pipe pipe;
-    QueryPlanResourceHolder resources;
-};
-
-SelectQueryInfo makeSelectQueryInfoForPartitionRead(const SelectQueryInfo & initial)
-{
-    SelectQueryInfo info = initial;
-
-    if (info.row_level_filter)
-    {
-        info.row_level_filter = std::make_shared<FilterDAGInfo>();
-        info.row_level_filter->actions = initial.row_level_filter->actions.clone();
-        info.row_level_filter->column_name = initial.row_level_filter->column_name;
-        info.row_level_filter->do_remove_column = initial.row_level_filter->do_remove_column;
-    }
-
-    return info;
-}
-
-/// Returns safe snapshot reading plan from the specified partition.
-QueryPlanPtr buildPartitionReadingPlan(
-    const String & partition_id,
-    const PartitionCursor & last_emitted_position,
-    const Int64 & safe_block_number,
-    const MergeTreeData & storage,
-    const StorageSnapshotPtr & storage_snapshot,
-    const SelectQueryInfo & query_info,
-    const PrewhereInfoPtr & initial_prewhere_info,
-    const ContextPtr & context,
-    const Names & inner_columns,
-    const size_t & requested_num_streams,
-    const UInt64 & max_block_size,
-    const SharedHeader & output_header,
-    bool unordered)
-{
-    auto partition_query_info = makeSelectQueryInfoForPartitionRead(query_info);
-    auto plan = MergeTreeDataSelectExecutor(storage).read(
-        inner_columns,
-        storage_snapshot,
-        partition_query_info,
-        context,
-        max_block_size,
-        requested_num_streams,
-        /*max_block_numbers_to_read=*/nullptr,
-        /*enable_parallel_reading=*/false);
-
-    if (!plan || !plan->getRootNode())
-        return nullptr;
-
-    /// Add cursor filter to read only safe snapshot.
-    auto cursor_filter = buildPartitionFilter(partition_id, last_emitted_position, safe_block_number, *plan->getCurrentHeader(), context);
-    plan->addStep(std::make_unique<FilterStep>(
-        plan->getCurrentHeader(),
-        std::move(cursor_filter.actions),
-        cursor_filter.column_name,
-        cursor_filter.do_remove_column));
-
-    /// Add prewhere built from the outer query analysis.
-    if (initial_prewhere_info)
-    {
-        plan->addStep(std::make_unique<FilterStep>(
-            plan->getCurrentHeader(),
-            initial_prewhere_info->prewhere_actions.clone(),
-            initial_prewhere_info->prewhere_column_name,
-            initial_prewhere_info->remove_prewhere_column));
-    }
-
-    /// Commit-order sort (_block_number, _block_offset); skipped for unordered streams (ordering holds only between snapshots).
-    if (!unordered)
-    {
-        SortDescription sort_desc;
-        sort_desc.emplace_back(BlockNumberColumn::name, 1);
-        sort_desc.emplace_back(BlockOffsetColumn::name, 1);
-        SortingStep::Settings sort_settings(context->getSettingsRef());
-        plan->addStep(std::make_unique<SortingStep>(
-            plan->getCurrentHeader(),
-            std::move(sort_desc),
-            /*limit=*/ 0,
-            sort_settings,
-            /*is_sorting_for_merge_join=*/false));
-    }
-
-    /// Add cursor calculation step.
-    plan->addStep(std::make_unique<BuildStreamingChunkCursorStep>(plan->getCurrentHeader(), unordered));
-
-    /// Add projection to required header.
-    auto convert = ActionsDAG::makeConvertingActions(
-        plan->getCurrentHeader()->getColumnsWithTypeAndName(),
-        output_header->getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name,
-        context);
-    plan->addStep(std::make_unique<ExpressionStep>(plan->getCurrentHeader(), std::move(convert)));
-
-    return plan;
-}
-
-Names extendWithAuxiliaryColumns(Names columns)
-{
-    for (const auto & aux_name : {PartitionIdColumn::name, BlockNumberColumn::name, BlockOffsetColumn::name})
-        if (!std::ranges::contains(columns, aux_name))
-            columns.push_back(aux_name);
-
-    return columns;
-}
-
-std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
-    const ClassifiedPartitions & partitions_classification,
-    const std::map<String, Int64> & safe_block_numbers,
-    const std::map<String, PartitionCursor> & last_emitted_positions,
-    const MergeTreeData & storage,
-    const SelectQueryInfo & query_info,
-    const PrewhereInfoPtr & initial_prewhere_info,
-    const ContextPtr & context,
-    const Names & user_requested_columns,
-    const size_t & requested_num_streams,
-    const UInt64 & max_block_size,
-    const SharedHeader & output_header,
-    bool unordered,
-    const LoggerPtr & log)
-{
-    LOG_DEBUG(log, "Building new snapshot for {} partition(s): {}", partitions_classification.readable_partitions.size(), partitions_classification.readable_partitions);
-
-    /// Fresh storage snapshot reused by every per-partition subplan in this iteration.
-    const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
-    const auto storage_snapshot = storage.getStorageSnapshot(metadata, context);
-    const auto columns_to_read = extendWithAuxiliaryColumns(user_requested_columns);
-
-    std::vector<QueryPlanPtr> per_partition_plans;
-    SharedHeaders per_partition_headers;
-
-    for (const auto & partition_id : partitions_classification.readable_partitions)
-    {
-        const PartitionCursor last_emitted_position = last_emitted_positions.contains(partition_id) ? last_emitted_positions.at(partition_id) : PartitionCursor{};
-        const Int64 safe_block_number = safe_block_numbers.at(partition_id);
-
-        auto plan = buildPartitionReadingPlan(
-            partition_id,
-            last_emitted_position,
-            safe_block_number,
-            storage,
-            storage_snapshot,
-            query_info,
-            initial_prewhere_info,
-            context,
-            columns_to_read,
-            requested_num_streams,
-            max_block_size,
-            output_header,
-            unordered);
-
-        if (plan)
-        {
-            per_partition_headers.push_back(plan->getCurrentHeader());
-            per_partition_plans.emplace_back(std::move(plan));
-        }
-    }
-
-    if (per_partition_plans.empty())
-        return std::nullopt;
-
-    QueryPlan unified;
-    unified.unitePlans(std::make_unique<UnionStep>(std::move(per_partition_headers)), std::move(per_partition_plans));
-
-    QueryPlanOptimizationSettings opt_settings(context);
-    unified.optimize(opt_settings);
-
-    LOG_TEST(log, "Unified snapshot plan:\n{}", explainPlan(unified));
-
-    auto builder = unified.buildQueryPipeline(opt_settings, BuildQueryPipelineSettings(context), /*do_optimize=*/false);
-
-    PipeWithResources result;
-    result.pipe = QueryPipelineBuilder::getPipe(std::move(*builder), result.resources);
-    result.pipe.resize(1);
-
-    LOG_TEST(log, "Unified snapshot pipeline:\n{}", explainPipeline(result.pipe));
-
-    return result;
+    WriteBufferFromOwnString buffer;
+    printPipeline(pipe.getProcessors(), buffer);
+    return buffer.str();
 }
 
 ContextPtr makeStreamingContext(ContextPtr context_)
@@ -294,7 +80,7 @@ SelectQueryInfo makeStreamingSelectQueryInfo(SelectQueryInfo info)
     return info;
 }
 
-PrewhereInfoPtr makeStreamingPrewhereInfo(PrewhereInfoPtr info)
+PrewhereInfoPtr makeStreamingPrewhereInfo(PrewhereInfoPtr info, const StreamSettings & stream_settings)
 {
     if (!info)
         return nullptr;
@@ -306,7 +92,29 @@ PrewhereInfoPtr makeStreamingPrewhereInfo(PrewhereInfoPtr info)
     patched_info->prewhere_actions.tryRestoreColumn(BlockNumberColumn::name);
     patched_info->prewhere_actions.tryRestoreColumn(BlockOffsetColumn::name);
 
+    /// These columns are needed for watermark calculation.
+    if (stream_settings.watermark)
+    {
+        patched_info->prewhere_actions.tryRestoreColumn(stream_settings.watermark->column);
+
+        IdentifierNameSet identifiers;
+        stream_settings.watermark->expression->collectIdentifierNames(identifiers);
+        for (const auto & identifier : identifiers)
+            patched_info->prewhere_actions.tryRestoreColumn(identifier);
+    }
+
     return patched_info;
+}
+
+Names filterStreamingVirtualColumns(Names columns)
+{
+    if (auto it = std::find(columns.begin(), columns.end(), TimeAttributeColumn::name); it != columns.end())
+        columns.erase(it);
+
+    if (auto it = std::find(columns.begin(), columns.end(), WatermarkColumn::name); it != columns.end())
+        columns.erase(it);
+
+    return columns;
 }
 
 }
@@ -322,18 +130,20 @@ MergeTreeCommitOrderSequentialSource::MergeTreeCommitOrderSequentialSource(
     MergeTreeBoundsSubscriptionPtr subscription_)
     : IProcessor({}, {Block(*header_)})
     , header(std::move(header_))
-    , storage(storage_)
-    , query_info(makeStreamingSelectQueryInfo(query_info_))
-    , initial_prewhere_info(makeStreamingPrewhereInfo(query_info_.prewhere_info))
-    , context(makeStreamingContext(std::move(context_)))
-    , user_requested_columns(std::move(user_requested_columns_))
-    , requested_num_streams(requested_num_streams_)
-    , max_block_size(max_block_size_)
-    , unordered(query_info_.table_expression_modifiers->getStreamSettings()->unordered)
     , subscription(std::move(subscription_))
     , stream_settings(*query_info_.table_expression_modifiers->getStreamSettings())
-    , log(getLogger("MergeTreeCommitOrderSequentialSource"))
-    , last_emitted_positions(buildMergeTreeCursor(query_info_.table_expression_modifiers->getStreamSettings()->cursor))
+    , reading_context{
+          .storage = storage_,
+          .query_info = makeStreamingSelectQueryInfo(query_info_),
+          .prewhere_info = makeStreamingPrewhereInfo(query_info_.prewhere_info, stream_settings),
+          .stream_settings = stream_settings,
+          .context = makeStreamingContext(std::move(context_)),
+          .user_requested_columns = filterStreamingVirtualColumns(std::move(user_requested_columns_)),
+          .requested_num_streams = requested_num_streams_,
+          .max_block_size = max_block_size_,
+          .output_header = header}
+    , log(getLogger(fmt::format("MergeTreeCommitOrderSequentialSource::{}", UUIDHelpers::generateV4())))
+    , read_state(stream_settings)
 {
 }
 
@@ -341,12 +151,6 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleRunningPipeline()
 {
     auto & output = outputs.front();
     auto & input = inputs.front();
-
-    if (output.isFinished())
-    {
-        input.close();
-        return Status::Finished;
-    }
 
     if (!output.canPush())
         return Status::PortFull;
@@ -358,29 +162,53 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleRunningPipeline()
     }
 
     auto chunk = input.pull(/*set_not_needed=*/true);
-    chassert(!chunk.hasRows() || chunk.getChunkInfos().has<StreamingChunkCursorInfo>());
-
-    if (auto cursor = chunk.getChunkInfos().extract<StreamingChunkCursorInfo>())
-    {
-        last_emitted_positions[cursor->partition_id] = cursor->cursor;
-        LOG_TEST(log, "Cursor for partition '{}' updated from chunk to ({}, {})", cursor->partition_id, cursor->cursor.block_number, cursor->cursor.block_offset);
-    }
 
     if (!input.isFinished())
         input.setNeeded();
+
+    if (auto global_watermark = chunk.getChunkInfos().get<WatermarkMarker>())
+        read_state.updateGlobalWatermark(global_watermark->watermark);
+
+    if (auto partition_cursor = chunk.getChunkInfos().extract<PartitionCursorInfo>())
+        read_state.updatePartitionCursor(partition_cursor->partition_id, partition_cursor->cursor);
+
+    if (auto partition_marker = chunk.getChunkInfos().extract<PartitionWatermarkInfo>())
+    {
+        read_state.updatePartitionWatermark(partition_marker->partition_id, std::move(partition_marker->watermark));
+
+        /// The dropped chunk was the last one - the sub-pipeline is exhausted.
+        if (input.isFinished())
+            return Status::Finished;
+
+        return Status::NeedData;
+    }
 
     output.push(std::move(chunk));
     return Status::PortFull;
 }
 
-IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration()
+IProcessor::Status MergeTreeCommitOrderSequentialSource::handleShutdown()
+{
+    auto & output = outputs.front();
+    chassert(output.isFinished());
+
+    if (inputs.empty() || !inputs.front().isConnected())
+        return Status::Finished;
+
+    auto & input = inputs.front();
+    input.close();
+
+    return Status::Finished;
+}
+
+IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration(const ClassifiedPartitions & partitions)
 {
     auto & output = outputs.front();
 
     if (output.isFinished())
         return Status::Finished;
 
-    if (pending_snapshot.has_value())
+    if (pending_round.has_value())
         return Status::UpdatePipeline;
 
     if (subscription->isDisabled())
@@ -389,10 +217,7 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration()
         return Status::Finished;
     }
 
-    const auto safe_block_numbers = subscription->snapshot();
-    const auto classification = getPartitionsClassification(safe_block_numbers, last_emitted_positions);
-
-    if (!classification.readable_partitions.empty())
+    if (read_state.hasWork(partitions))
         return Status::Ready;
 
     if (!current_sub_pipeline.empty())
@@ -401,12 +226,12 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration()
     return Status::Async;
 }
 
-IProcessor::Status MergeTreeCommitOrderSequentialSource::handleBoundedReconfiguration()
+IProcessor::Status MergeTreeCommitOrderSequentialSource::handleBoundedReconfiguration(const ClassifiedPartitions & partitions)
 {
-    const auto result = handleReconfiguration();
+    const auto result = handleReconfiguration(partitions);
 
-    // Finish after the first completed snapshot, or once the first enrichment shows nothing (more) to read.
-    if (subscription->updatesCount() > 0 && (finished_snapshots > 0 || result == Status::Async))
+    // Finish after the first completed read round, or once the first enrichment shows nothing (more) to read.
+    if (subscription->wasSubscriptionUpdated() && (finished_rounds > 0 || result == Status::Async))
     {
         outputs.front().finish();
         return Status::Finished;
@@ -415,95 +240,112 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleBoundedReconfigur
     return result;
 }
 
-void MergeTreeCommitOrderSequentialSource::handlePipelineEnd()
+bool MergeTreeCommitOrderSequentialSource::needToEmitGlobalIdle(const ClassifiedPartitions & partitions)
 {
-    ++finished_snapshots;
-    LOG_TEST(log, "Finished reading snapshot #{}", finished_snapshots);
+    if (!stream_settings.watermark)
+        return false;
 
-    for (const auto & [partition_id, safe_block_number] : reading_up_to_block_numbers)
-    {
-        auto & position = last_emitted_positions[partition_id];
-        position.block_number = safe_block_number + 1;
-        position.block_offset = -1;
-        LOG_TEST(log, "Cursor for partition '{}' promoted on pipeline end to ({}, {})", partition_id, position.block_number, position.block_offset);
-    }
+    /// The idle marker must not overtake the watermark extension emitted by the last idle-triggered rebuild.
+    if (read_state.hasWork(partitions) || pending_round.has_value())
+        return false;
 
-    reading_up_to_block_numbers.clear();
+    const bool has_partitions = !partitions.changed_partitions.empty() || !partitions.unchanged_partitions.empty() || !partitions.idle_partitions.empty();
+    const bool all_non_idle_empty = partitions.changed_partitions.empty() && partitions.unchanged_partitions.empty();
+    const bool source_idle = has_partitions ? all_non_idle_empty : subscription->wasSubscriptionUpdated();
+
+    return !read_state.isSourceMarkedIdle() && source_idle;
+}
+
+IProcessor::Status MergeTreeCommitOrderSequentialSource::handleEmitGlobalIdle()
+{
+    auto & output = outputs.front();
+
+    if (!output.canPush())
+        return Status::PortFull;
+
+    LOG_DEBUG(log, "Source is idle - emitting an idle marker");
+    output.push(IdleMarker::create(*header));
+    read_state.markSourceIdle();
+    return Status::PortFull;
 }
 
 IProcessor::Status MergeTreeCommitOrderSequentialSource::prepare()
 {
+    subscription->drain();
+
+    const bool is_upstream_finished = outputs.front().isFinished();
+    if (is_upstream_finished)
+        return handleShutdown();
+
     const bool has_running_sub_pipeline = !inputs.empty() && inputs.front().isConnected() && !inputs.front().isFinished();
     if (has_running_sub_pipeline)
-        return handleRunningPipeline();
+        if (auto sub_pipeline_status = handleRunningPipeline(); sub_pipeline_status != Status::Finished)
+            return sub_pipeline_status;
 
-    if (!pending_snapshot.has_value() && !reading_up_to_block_numbers.empty())
-        handlePipelineEnd();
+    const bool has_unfinalized_pipeline = !pending_round.has_value() && read_state.readRoundInProgress();
+    if (has_unfinalized_pipeline)
+    {
+        read_state.finalizeReadRound();
+        finished_rounds += 1;
+        LOG_TEST(log, "Finished read round #{}", finished_rounds);
+    }
 
-    if (!stream_settings.subscribe_for_updates)
-        return handleBoundedReconfiguration();
+    const auto safe_block_numbers = subscription->snapshot();
+    const auto classification = classifyPartitions(read_state, safe_block_numbers, stream_settings);
+    read_state.updatePartitionSet(classification);
 
-    return handleReconfiguration();
+    const bool need_mark_source_idle = needToEmitGlobalIdle(classification);
+    if (need_mark_source_idle)
+        return handleEmitGlobalIdle();
+
+    const bool is_bounded_subscription = !stream_settings.subscribe_for_updates;
+    if (is_bounded_subscription)
+        return handleBoundedReconfiguration(classification);
+
+    return handleReconfiguration(classification);
 }
 
 void MergeTreeCommitOrderSequentialSource::work()
 {
     auto component_guard = Coordination::setCurrentComponent("MergeTreeCommitOrderSequentialSource::work");
 
-    chassert(!pending_snapshot.has_value());
-
-    subscription->drain();
+    chassert(!pending_round.has_value());
 
     if (subscription->isDisabled())
         return;
 
     const auto safe_block_numbers = subscription->snapshot();
-    const auto classification = getPartitionsClassification(safe_block_numbers, last_emitted_positions);
-    if (classification.readable_partitions.empty())
-        return;
+    const auto classification = classifyPartitions(read_state, safe_block_numbers, stream_settings);
 
-    for (const auto & partition_id : classification.readable_partitions)
-        reading_up_to_block_numbers[partition_id] = safe_block_numbers.at(partition_id);
+    read_state.updatePartitionSet(classification);
+    read_state.startReadRound(classification, safe_block_numbers);
 
-    auto result = buildNextSnapshotReadingPipeline(
-        classification,
-        safe_block_numbers,
-        last_emitted_positions,
-        storage,
-        query_info,
-        initial_prewhere_info,
-        context,
-        user_requested_columns,
-        requested_num_streams,
-        max_block_size,
-        header,
-        unordered,
-        log);
-
+    auto result = buildReadRoundPipeline(reading_context, read_state, safe_block_numbers);
     if (result)
     {
-        pending_snapshot = std::move(result->pipe);
+        LOG_TEST(log, "Built read round pipeline:\n{}", explainPipeline(result->pipe));
+        pending_round = std::move(result->pipe);
         pending_resources = std::make_unique<QueryPlanResourceHolder>(std::move(result->resources));
     }
 }
 
-int MergeTreeCommitOrderSequentialSource::schedule()
+std::tuple<int, uint32_t, Int64> MergeTreeCommitOrderSequentialSource::scheduleForEvent()
 {
-    return subscription->fd();
+    return {subscription->fd(), EPOLLIN | EPOLLERR, read_state.calculateTimeToNextIdle(stream_settings)};
 }
 
 IProcessor::PipelineUpdate MergeTreeCommitOrderSequentialSource::updatePipeline()
 {
-    chassert(pending_snapshot.has_value() || !current_sub_pipeline.empty());
+    chassert(pending_round.has_value() || !current_sub_pipeline.empty());
 
     PipelineUpdate update;
 
-    /// Tear down the previous snapshot reading sub-pipeline.
+    /// Tear down the previous read round sub-pipeline.
     if (!current_sub_pipeline.empty())
     {
         chassert(!inputs.empty());
         chassert(inputs.front().isConnected());
-        LOG_TEST(log, "Tear down previous snapshot reading sub-pipeline");
+        LOG_TEST(log, "Tear down previous read round sub-pipeline");
 
         auto & input = inputs.front();
         disconnect(input.getOutputPort(), input);
@@ -512,20 +354,18 @@ IProcessor::PipelineUpdate MergeTreeCommitOrderSequentialSource::updatePipeline(
         current_resources.reset();
     }
 
-    /// Attach the next snapshot reading sub-pipeline if one is ready.
-    if (pending_snapshot.has_value())
+    /// Attach the next read round sub-pipeline if one is ready.
+    if (pending_round.has_value())
     {
-        auto sub_pipe = std::exchange(pending_snapshot, std::nullopt);
+        auto sub_pipe = std::exchange(pending_round, std::nullopt);
         chassert(sub_pipe->numOutputPorts() == 1);
-        LOG_TEST(log, "Connecting next snapshot reading sub-pipeline");
+        LOG_TEST(log, "Connecting next read round sub-pipeline");
 
         if (inputs.empty())
             inputs.emplace_back(*header, this);
 
         auto * sub_output = sub_pipe->getOutputPort(0);
         auto sub_processors = Pipe::detachProcessors(std::move(sub_pipe.value()));
-
-        /// We need to retag the processors in order to track their execution time correctly in EXPLAIN ANALYZE
         for (auto & processor : sub_processors)
             processor->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
 

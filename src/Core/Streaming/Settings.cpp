@@ -5,6 +5,7 @@
 namespace DB
 {
 
+///////////////////////////////////////////////////////////////////////////////////
 WatermarkSettingsPtr WatermarkSettings::clone() const
 {
     auto result = std::make_shared<WatermarkSettings>(*this);
@@ -28,6 +29,7 @@ bool WatermarkSettings::operator==(const WatermarkSettings & rhs) const
     return !expression || expression->getTreeHash(/*ignore_aliases=*/false) == rhs.expression->getTreeHash(/*ignore_aliases=*/false);
 }
 
+///////////////////////////////////////////////////////////////////////////////////
 StreamSettingsPtr StreamSettings::clone() const
 {
     auto result = std::make_shared<StreamSettings>(*this);
@@ -70,6 +72,18 @@ bool StreamSettings::operator==(const StreamSettings & rhs) const
     }
 
     return true;
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+bool isIdleExpired(
+    const std::chrono::steady_clock::time_point & now,
+    const std::chrono::steady_clock::time_point & last_active,
+    const WatermarkSettingsPtr & watermark)
+{
+    if (watermark->idle_timeout.count() <= 0)
+        return false;
+
+    return now > last_active + watermark->idle_timeout;
 }
 
 }

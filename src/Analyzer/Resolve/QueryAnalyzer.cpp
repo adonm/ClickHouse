@@ -882,10 +882,7 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
                     const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
                     if (stream_settings->watermark)
-                    {
                         validateWatermarkSettings(*stream_settings->watermark, storage_snapshot, scope);
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Watermarks for Streaming Queries are not supported yet");
-                    }
                 #endif
             }
         }

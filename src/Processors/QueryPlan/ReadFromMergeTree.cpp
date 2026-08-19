@@ -3,12 +3,8 @@
 #include <base/sort.h>
 #include <Columns/ColumnConst.h>
 
-#include <cmath>
-#include <limits>
-
-#include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
+#include <Storages/MergeTree/Streaming/Subscription/MergeTreeBoundsSubscription.h>
 #include <Storages/MergeTree/Streaming/MergeTreeCommitOrderSequentialSource.h>
-#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Access/ContextAccess.h>
 #include <Analyzer/QueryNode.h>
 #include <Core/Names.h>
@@ -93,6 +89,9 @@
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
+#include <cmath>
+#include <limits>
+
 #include <city.h>
 
 #include <boost/functional/hash.hpp>
@@ -4130,7 +4129,7 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
 Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
 {
     const size_t num_streams = std::max<size_t>(1, requested_num_streams);
-    SharedHeader header = getOutputHeader();
+    const SharedHeader header = getOutputHeader();
 
     Pipes pipes;
     pipes.reserve(num_streams);

@@ -1,7 +1,9 @@
 #pragma once
 
-#include <Storages/MergeTree/Streaming/CursorUtils.h>
-#include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
+#include <Storages/MergeTree/Streaming/Subscription/MergeTreeBoundsSubscription.h>
+#include <Storages/MergeTree/Streaming/ReadingPlan/buildReadRoundPipeline.h>
+#include <Storages/MergeTree/Streaming/PartitionsClassification.h>
+#include <Storages/MergeTree/Streaming/ReadState.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -13,17 +15,21 @@
 #include <Processors/IProcessor.h>
 
 #include <memory>
+#include <optional>
 
 namespace DB
 {
 
-/// Snapshot-loop streaming source.
+/// Read-round loop streaming source.
 class MergeTreeCommitOrderSequentialSource final : public IProcessor
 {
     Status handleRunningPipeline();
-    Status handleReconfiguration();
-    Status handleBoundedReconfiguration();
-    void handlePipelineEnd();
+    Status handleShutdown();
+    Status handleReconfiguration(const ClassifiedPartitions & partitions);
+    Status handleBoundedReconfiguration(const ClassifiedPartitions & partitions);
+
+    bool needToEmitGlobalIdle(const ClassifiedPartitions & partitions);
+    Status handleEmitGlobalIdle();
 
 public:
     MergeTreeCommitOrderSequentialSource(
@@ -40,7 +46,7 @@ public:
 
     Status prepare() override;
     void work() override;
-    int schedule() override;
+    std::tuple<int, uint32_t, Int64> scheduleForEvent() override;
     PipelineUpdate updatePipeline() override;
 
     void onUpdatePorts() override;
@@ -48,32 +54,21 @@ public:
 
 private:
     const SharedHeader header;
-    const MergeTreeData & storage;
-    const SelectQueryInfo query_info;
-    const PrewhereInfoPtr initial_prewhere_info;
-    const ContextPtr context;
-    const Names user_requested_columns;
-    const size_t requested_num_streams;
-    const UInt64 max_block_size;
-    const bool unordered;
     const MergeTreeBoundsSubscriptionPtr subscription;
-    /// Streaming settings of the query (bounded flag, cursor, watermark); a query property read from `query_info`.
     const StreamSettings stream_settings;
+    const ReadRoundContext reading_context;
     const LoggerPtr log;
 
-    /// Query runtime information
-    std::map<String, PartitionCursor> last_emitted_positions;
+    /// Runtime information
+    ReadState read_state;
+    int64_t finished_rounds = 0;
 
-    /// Number of snapshots fully read so far (a metric; also gates a bounded stream's finish).
-    size_t finished_snapshots = 0;
-
-    /// Current snapshot runtime information
+    /// Current read round runtime information
     Processors current_sub_pipeline;
     std::unique_ptr<QueryPlanResourceHolder> current_resources;
-    std::map<String, Int64> reading_up_to_block_numbers;
 
     /// Reconfiguration
-    std::optional<Pipe> pending_snapshot;
+    std::optional<Pipe> pending_round;
     std::unique_ptr<QueryPlanResourceHolder> pending_resources;
 };
 

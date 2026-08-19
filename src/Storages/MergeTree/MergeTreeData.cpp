@@ -101,8 +101,8 @@
 #include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/Common.h>
-#include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
-#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
+#include <Storages/MergeTree/Streaming/Subscription/MergeTreeBoundsSubscription.h>
+#include <Storages/MergeTree/Streaming/Subscription/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -12822,9 +12822,7 @@ bool MergeTreeData::scheduleStreamingJob(BackgroundJobsAssignee & assignee)
     bool any_enriched = false;
     subscription_manager.executeOnEachSubscription([&](StreamSubscriptionPtr & subscription)
     {
-        auto & bounds_subscription = *subscription->as<MergeTreeBoundsSubscription>();
-        any_enriched |= enrichSubscription(bounds_subscription, local_parts, promoters);
-        bounds_subscription.onEnrichmentRound();
+        any_enriched |= enrichSubscription(*subscription->as<MergeTreeBoundsSubscription>(), local_parts, promoters);
     });
 
     if (any_enriched)

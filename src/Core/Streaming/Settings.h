@@ -9,6 +9,7 @@
 namespace DB
 {
 
+///////////////////////////////////////////////////////////////////////////////////
 struct WatermarkSettings
 {
     String column;
@@ -21,6 +22,7 @@ public:
 };
 using WatermarkSettingsPtr = std::shared_ptr<WatermarkSettings>;
 
+///////////////////////////////////////////////////////////////////////////////////
 struct StreamSettings
 {
     /// If true, read only the first snapshot and then finish (do not subscribe for updates).
@@ -35,5 +37,11 @@ public:
     bool operator==(const StreamSettings & rhs) const;
 };
 using StreamSettingsPtr = std::shared_ptr<StreamSettings>;
+
+///////////////////////////////////////////////////////////////////////////////////
+bool isIdleExpired(
+    const std::chrono::steady_clock::time_point & now,
+    const std::chrono::steady_clock::time_point & last_active,
+    const WatermarkSettingsPtr & watermark);
 
 }
