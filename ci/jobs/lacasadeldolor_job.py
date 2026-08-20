@@ -543,6 +543,23 @@ def main():
     croot = ctree.getroot()
     if croot.tag != "clickhouse":
         raise Exception("<clickhouse> element not found")
+    # Share the AST fuzzer's experimental-feature gates, skipping what is built below or
+    # randomized by `properties.py` (appending those duplicates them or loses the randomization).
+    ftree = ET.parse(f"{repo_dir}/ci/jobs/scripts/fuzzer/fuzz-server-settings.xml")
+    generated_here = {
+        "allow_experimental_transactions",
+        "backups",
+        "distributed_ddl",
+        "keeper_map_path_prefix",
+        "named_collections",
+        "remote_servers",
+        "shared_database_catalog",
+        "tmp_path",
+    }
+    for felement in ftree.getroot():
+        # skip comments, whose `tag` is a callable rather than the element name
+        if isinstance(felement.tag, str) and felement.tag not in generated_here:
+            croot.append(felement)
     # Under sanitizers Keeper can be slow enough that the default 15s ZK session
     # timeout makes DatabaseReplicated abort during reconnect (the worker waits
     # 3 * session_timeout_ms for stale ephemeral nodes to expire). Give it more
@@ -575,16 +592,36 @@ def main():
     ET.indent(ctree, space="    ", level=0)  # indent tree
     ctree.write(config_xml, encoding="utf-8", xml_declaration=True)
 
-    # Set parallel replicas cluster
     utree = ET.parse(f"{repo_dir}/ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml")
+    uroot = utree.getroot()
+    if uroot.tag != "clickhouse":
+        raise Exception("<clickhouse> element not found")
+    def_profile = uroot.find("./profiles/default")
+    if def_profile is None:
+        profiles = ET.SubElement(uroot, "profiles")
+        def_profile = ET.SubElement(profiles, "default")
+
+    # `query-fuzzer-tweaks-users.xml` sets `ast_fuzzer_runs`, so the server-side AST fuzzer
+    # mutates every query sent here, settings included. Pull in the caps installed next to
+    # that profile, which also keep `max_parser_backtracks` from following a fuzzed
+    # `compatibility` back to its unlimited pre-24.3 default.
+    ltree = ET.parse(f"{repo_dir}/ci/jobs/scripts/fuzzer/limit-recursion-settings.xml")
+    lprofile = ltree.getroot().find("./profiles/default")
+    if lprofile is None:
+        raise Exception("<profiles><default> element not found")
+    constraints = def_profile.find("constraints")
+    for lelement in lprofile:
+        if not isinstance(lelement.tag, str):
+            continue  # skip comments, whose `tag` is a callable rather than the element name
+        if lelement.tag != "constraints":
+            def_profile.append(lelement)
+        elif constraints is None:
+            def_profile.append(lelement)
+        else:
+            constraints.extend(lelement)
+
+    # Set parallel replicas cluster
     if has_all_cluster:
-        uroot = utree.getroot()
-        if uroot.tag != "clickhouse":
-            raise Exception("<clickhouse> element not found")
-        def_profile = uroot.find("./profiles/default")
-        if def_profile is None:
-            profiles = ET.SubElement(uroot, "profiles")
-            def_profile = ET.SubElement(profiles, "default")
         cluster_preplicas = ET.SubElement(def_profile, "cluster_for_parallel_replicas")
         cluster_preplicas.text = "allnodes"
     ET.indent(utree, space="    ", level=0)  # indent tree
