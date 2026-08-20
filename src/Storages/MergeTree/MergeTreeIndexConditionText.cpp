@@ -783,22 +783,42 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringLikeToTokens
 
 std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case_insensitive) const
 {
-    /// Only handles the pure '%value%' form: one leading '%', a non-empty alphanumeric token immediately following,
-    /// then one trailing '%' immediately after the token, and nothing else.
-    /// Returns a single-element vector on success, empty on anything more complex.
-    /// Only this form is eligible for direct read mode.
+    /// Returns a single-element vector on success, empty when the pattern is not eligible for a dictionary scan.
 
     const String value = preprocessor->processConstant(field.safeGet<String>());
     if (value.empty())
         return {};
+
+    const size_t min_pattern_length = getContext()->getSettingsRef()[Setting::text_index_like_min_pattern_length];
+
+    auto compile_pattern = [&](const String & pattern)
+    {
+        std::vector<OptimizedRegularExpression> patterns;
+        if (case_insensitive)
+            patterns.emplace_back(Regexps::createRegexp<true, true, true>(pattern));
+        else
+            patterns.emplace_back(Regexps::createRegexp<true, true, false>(pattern));
+        return patterns;
+    };
+
+    /// The array tokenizer does not split an input value, so a token is the whole value and any pattern matches a token
+    /// exactly when it matches the value: anchors, punctuation, '_' and several '%'-separated needles included.
+    if (tokenizer->getType() == ITokenizer::Type::Array)
+    {
+        const auto literal_length = std::ranges::count_if(value, [](char c) { return c != '%' && c != '_'; });
+        if (static_cast<size_t>(literal_length) < std::max<size_t>(1, min_pattern_length))
+            return {};
+
+        return compile_pattern(value);
+    }
+
+    /// A tokenizer that splits an input value only handles the pure '%value%' form.
 
     const char * data = value.data();
     const size_t length = value.size();
     size_t pos = 0;
 
     const auto is_token_char = [](unsigned char c) { return isASCII(c) && isAlphaNumericASCII(static_cast<char>(c)); };
-
-    const size_t min_pattern_length = getContext()->getSettingsRef()[Setting::text_index_like_min_pattern_length];
 
     /// Must start with at least one '%'.
     if (data[pos] != '%')
@@ -838,12 +858,7 @@ std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeT
     pattern.append(data + start, end - start);
     pattern += '%';
 
-    std::vector<OptimizedRegularExpression> patterns;
-    if (case_insensitive)
-        patterns.emplace_back(Regexps::createRegexp<true, true, true>(pattern));
-    else
-        patterns.emplace_back(Regexps::createRegexp<true, true, false>(pattern));
-    return patterns;
+    return compile_pattern(pattern);
 }
 
 /// Converts a Field value to its text representation using `serializeText`,
@@ -1264,7 +1279,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (like_optimization_supported_tokenizers.contains(tokenizer->getType()) && !has_preprocessor && !has_postprocessor
             && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
         {
-            /// TODO(ahmadov): Only '%foo%' pattern is eligible for direct read mode. An empty vector means the pattern is too complex.
+            /// TODO(ahmadov): With a tokenizer that splits input, only '%foo%' is eligible for direct read
+            /// mode. An empty vector means the pattern is too complex.
             /// Add support for multiple patterns later with hint mode:
             /// 1. Handle multiple patterns e.g. %foo bar% -> postings_pattern(%foo) && postings_pattern(bar%) && regex(%foo bar%)
             /// 2. Handle exact tokens and patterns e.g. %foo bar baz% -> postings_exact(bar) && postings_pattern(%foo) && postings_pattern(bar%)
