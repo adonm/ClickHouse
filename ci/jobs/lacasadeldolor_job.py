@@ -602,9 +602,9 @@ def main():
         def_profile = ET.SubElement(profiles, "default")
 
     # `query-fuzzer-tweaks-users.xml` sets `ast_fuzzer_runs`, so the server-side AST fuzzer
-    # mutates every query sent here, settings included. Pull in the caps installed next to
-    # that profile, which also keep `max_parser_backtracks` from following a fuzzed
-    # `compatibility` back to its unlimited pre-24.3 default.
+    # mutates every query sent here too. Pull in the recursion/`max_threads`/sleep caps
+    # installed next to that profile. BuzzHouse currently keeps within them on its own, so
+    # this is a backstop for whatever either generator starts emitting later.
     ltree = ET.parse(f"{repo_dir}/ci/jobs/scripts/fuzzer/limit-recursion-settings.xml")
     lprofile = ltree.getroot().find("./profiles/default")
     if lprofile is None:
