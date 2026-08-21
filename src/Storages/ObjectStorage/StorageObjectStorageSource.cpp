@@ -917,10 +917,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 /// the file's lifetime. Fetch it once per path per pod and
                 /// serve it from the object metadata cache - this removes the
                 /// per-query S3 HEAD that dominates warm point lookups. The
-                /// real etag is preserved for etag-keyed consumers. The key
-                /// includes the object-storage endpoint so two catalogs with
-                /// identical layouts never collide.
-                const auto cache_key = configuration->getTypeName() + ":" + metadata_object.relative_path;
+                /// real etag is preserved for etag-keyed consumers. Include
+                /// endpoint/namespace identity and tag completeness: two S3
+                /// buckets may contain the same relative key, and a metadata
+                /// object loaded without tags cannot satisfy a later _tags read.
+                auto cache_key = getUniqueStoragePathIdentifier(*configuration, *object_info, /* include_connection_info */ true);
+                if (with_tags)
+                    cache_key += "#with_tags";
                 object_info->setObjectMetadata(Iceberg::getObjectMetadataCache()->getOrSetMetadata(
                     cache_key,
                     [&] { return object_storage->getObjectMetadata(metadata_object, with_tags); }));

@@ -765,6 +765,17 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     auto [namespace_name, table_name] = DataLake::parseTableName(name);
 
+    /// StorageObjectStorageCluster and the regular storage have different
+    /// execution semantics. Do not let the first query's parallel-replica
+    /// mode determine the concrete StoragePtr returned to later queries.
+    const auto & query_settings = context_->getSettingsRef();
+    const auto parallel_replicas_cluster_name = query_settings[Setting::cluster_for_parallel_replicas].toString();
+    const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
+        && query_settings[Setting::parallel_replicas_for_cluster_engines]
+        && context_->canUseTaskBasedParallelReplicas()
+        && !context_->isDistributed();
+    const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+
     // --- Catalog storage cache: avoid the per-query REST round trip AND the
     // per-query storage rebuild (metadata JSON parse + schema + manifest list,
     // ~100ms at 150M rows). The cached entry holds the constructed, long-lived
@@ -774,7 +785,13 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 #if USE_AVRO
     const UInt64 catalog_staleness_ms = settings[DatabaseDataLakeSetting::catalog_cache_staleness_ms].value;
     const bool use_catalog_cache = catalog_staleness_ms != 0 && !lightweight && !ignore_if_not_iceberg;
-    const String catalog_cache_key = namespace_name + "." + table_name;
+    String catalog_cache_key = namespace_name + "." + table_name;
+    if (can_use_parallel_replicas && !is_secondary_query)
+        catalog_cache_key += "#cluster=" + parallel_replicas_cluster_name;
+    else if (can_use_parallel_replicas && context_->getClientInfo().collaborate_with_initiator)
+        catalog_cache_key += "#distributed=" + parallel_replicas_cluster_name;
+    else
+        catalog_cache_key += "#local";
     if (use_catalog_cache)
     {
         auto cache = getOrCreateCatalogCache(settings);
@@ -973,16 +990,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
     StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
-
-    const auto & query_settings = context_->getSettingsRef();
-
-    const auto parallel_replicas_cluster_name = query_settings[Setting::cluster_for_parallel_replicas].toString();
-    const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
-        && query_settings[Setting::parallel_replicas_for_cluster_engines]
-        && context_->canUseTaskBasedParallelReplicas()
-        && !context_->isDistributed();
-
-    const auto is_secondary_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
 
     /// When we applied static credentials from database settings, they are authoritative:
     /// do not let a catalog-vended refresh callback (e.g. Unity/REST `requestReadCredentials`)

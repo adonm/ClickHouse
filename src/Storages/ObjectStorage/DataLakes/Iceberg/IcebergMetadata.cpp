@@ -238,22 +238,23 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
     /// JSON (which re-registers schemas into the SchemaProcessor under its
     /// write lock on every query). Lock-free on the warm path via atomic
     /// shared_ptr load.
-    if (!force_fetch_latest_metadata)
-    {
-        const auto & query_settings = context->getSettingsRef();
-        const bool time_travel = query_settings[Setting::iceberg_timestamp_ms].changed
-            || query_settings[Setting::iceberg_snapshot_id].changed;
+    const auto & query_settings = context->getSettingsRef();
+    const bool time_travel = query_settings[Setting::iceberg_timestamp_ms].changed
+        || query_settings[Setting::iceberg_snapshot_id].changed;
 
-        if (!time_travel)
-        {
-            if (auto cached = std::atomic_load_explicit(&state_cache, std::memory_order_acquire);
-                cached && cached->metadata_version == metadata_version && cached->metadata_file_path == metadata_file_path)
-                return {cached->data_snapshot, cached->table_state};
-        }
+    if (!force_fetch_latest_metadata && !time_travel)
+    {
+        if (auto cached = std::atomic_load_explicit(&state_cache, std::memory_order_acquire);
+            cached && cached->metadata_version == metadata_version && cached->metadata_file_path == metadata_file_path)
+            return {cached->data_snapshot, cached->table_state};
     }
 
     auto result = getState(context, metadata_file_path, metadata_version);
 
+    /// A historical query must not replace the singleton current-state entry:
+    /// the metadata path/version can be the same while the selected snapshot is
+    /// different, poisoning the next ordinary query.
+    if (!time_travel)
     {
         auto entry = std::make_shared<StateCacheEntry>();
         entry->data_snapshot = result.first;

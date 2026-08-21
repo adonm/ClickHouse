@@ -103,6 +103,8 @@ def test_iceberg_snapshot_reads(started_cluster_iceberg_with_spark, format_versi
         == instance.query("SELECT number, toString(number + 1) FROM numbers(100)")
     )
 
+    # Historical reads must not replace the parsed current-state cache entry.
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 300
 
     assert (
         instance.query(
