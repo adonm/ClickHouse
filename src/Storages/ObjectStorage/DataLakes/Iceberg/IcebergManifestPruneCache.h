@@ -24,31 +24,24 @@ namespace CurrentMetrics
 namespace DB::Iceberg
 {
 
-/// Cache for partition-pruning decisions: key = manifest_path + "#" +
-/// row_index + "#" + partition_filter_hash + "#" + schema ids, value =
-/// ManifestPruneCacheValue (entry==nullptr means PARTITION_PRUNED, non-null
-/// means the partition predicate kept this entry). The key deliberately
-/// excludes the point-lookup literal so every query sharing a prefix hits
-/// after the first one; min-max pruning is re-evaluated per query on the
-/// few surviving entries. Manifest path changes on new snapshot, so no TTL
-/// is needed - old entries are naturally not hit after a snapshot advances
-/// and are evicted via LRU.
+/// Cache of complete partition-pruning results for one manifest. The value
+/// contains only row indexes kept by the partition predicate; a warm query
+/// jumps directly to those rows instead of probing a cache entry for every
+/// manifest row. Point literals are deliberately excluded from the key, so
+/// min-max pruning is still evaluated for every query on the few candidates.
+/// The key includes the table snapshot id: Iceberg snapshots may reuse an
+/// immutable manifest, but its inherited context and visible file set belong
+/// to the snapshot being queried.
 struct ManifestPruneCacheValue
 {
-    // nullptr = pruned (PARTITION_PRUNED or MIN_MAX_INDEX_PRUNED), non-null = kept
-    ProcessedManifestFileEntryPtr entry;
-    // Valid only when entry==nullptr: which prune reason it was
-    int prune_status = 0; // PruningReturnStatus as int to avoid header dependency
-    bool is_pruned() const { return !entry; }
+    std::shared_ptr<const std::vector<size_t>> candidate_row_indexes;
 };
 
 struct ManifestPruneCacheWeightFunction
 {
     size_t operator()(const ManifestPruneCacheValue & v) const
     {
-        // Each entry is one pointer + overhead; keep weight 1 per row for simple LRU
-        // but account for actual object size when kept.
-        return v.entry ? 256 : 64;
+        return 64 + (v.candidate_row_indexes ? v.candidate_row_indexes->size() * sizeof(size_t) : 0);
     }
 };
 
