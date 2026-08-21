@@ -99,7 +99,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             std::lock_guard lock(reader_mutex);
             reader.emplace();
             reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
-            reader->reader.file_metadata = getFileMetadata(reader->reader.prefetcher);
+            reader->reader.shared_file_metadata = getFileMetadata(reader->reader.prefetcher);
             std::optional<String> row_group_index_cache_key;
             if (object_with_metadata.has_value() && object_with_metadata->metadata.has_value()
                 && object_with_metadata->metadata->isEtagUsableAsCacheKey())
@@ -114,19 +114,19 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
     }
 }
 
-parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet::Prefetcher & prefetcher) const
+std::shared_ptr<const parquet::format::FileMetaData> ParquetV3BlockInputFormat::getFileMetadata(Parquet::Prefetcher & prefetcher) const
 {
     if (metadata_cache && object_with_metadata.has_value() && object_with_metadata->metadata.has_value())
     {
         String file_name = object_with_metadata->getPath();
         String etag = object_with_metadata->metadata->etag;
         ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
-        return metadata_cache->getOrSetMetadata(
+        return metadata_cache->getOrSetMetadataPtr(
             cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher); });
     }
     else
     {
-        return Parquet::Reader::readFileMetaData(prefetcher);
+        return std::make_shared<const parquet::format::FileMetaData>(Parquet::Reader::readFileMetaData(prefetcher));
     }
 }
 
@@ -140,10 +140,10 @@ Chunk ParquetV3BlockInputFormat::read()
         /// Don't init Reader and ReadManager if we only need file metadata.
         Parquet::Prefetcher temp_prefetcher;
         temp_prefetcher.init(in, read_options, parser_shared_resources);
-        parquet::format::FileMetaData file_metadata = getFileMetadata(temp_prefetcher);
+        auto file_metadata = getFileMetadata(temp_prefetcher);
 
 
-        auto chunk = getChunkForCount(size_t(file_metadata.num_rows));
+        auto chunk = getChunkForCount(size_t(file_metadata->num_rows));
         chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
 
         reported_count = true;
