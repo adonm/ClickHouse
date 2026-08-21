@@ -40,6 +40,11 @@
 #include <Storages/StorageNull.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
+#if USE_AVRO
+#include <Databases/DataLake/DataLakeCatalogCache.h>
+#include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
+#endif
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
@@ -95,6 +100,8 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString google_adc_quota_project_id;
     extern const DatabaseDataLakeSettingsString google_adc_credentials_file;
     extern const DatabaseDataLakeSettingsBool force_add_bucket;
+    extern const DatabaseDataLakeSettingsUInt64 catalog_cache_staleness_ms;
+    extern const DatabaseDataLakeSettingsUInt64 catalog_cache_max_entries;
 }
 
 namespace Setting
@@ -495,6 +502,30 @@ void DatabaseDataLake::resetCatalog(String reason) const
     catalog_unavailable_reason = std::move(reason);
 }
 
+void DatabaseDataLake::clearCatalogCache() const
+{
+#if USE_AVRO
+    std::lock_guard lock(catalog_cache_mutex);
+    if (catalog_cache)
+        catalog_cache->clear();
+#endif
+}
+
+#if USE_AVRO
+::DataLake::DataLakeCatalogCachePtr DatabaseDataLake::getOrCreateCatalogCache(const DatabaseDataLakeSettings & settings) const
+{
+    std::lock_guard lock(catalog_cache_mutex);
+    const UInt64 max_entries = settings[DatabaseDataLakeSetting::catalog_cache_max_entries].value;
+    const size_t max_size_bytes = max_entries * 8192; // ~8KB per entry (location + schema + overhead)
+    const double size_ratio = 0.5;
+    if (!catalog_cache || catalog_cache->maxCount() != max_entries || catalog_cache->maxSizeInBytes() != max_size_bytes)
+    {
+        catalog_cache = std::make_shared<::DataLake::DataLakeCatalogCache>("SLRU", max_size_bytes, max_entries, size_ratio);
+    }
+    return catalog_cache;
+}
+#endif
+
 std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfiguration(
     DatabaseDataLakeStorageType type,
     DataLakeStorageSettingsPtr storage_settings) const
@@ -734,6 +765,41 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     auto [namespace_name, table_name] = DataLake::parseTableName(name);
 
+    // --- Catalog storage cache: avoid the per-query REST round trip AND the
+    // per-query storage rebuild (metadata JSON parse + schema + manifest list,
+    // ~100ms at 150M rows). The cached entry holds the constructed, long-lived
+    // StorageObjectStorage, so hits return it directly - matching the
+    // per-table ENGINE=Iceberg amortization. The storage refreshes its own
+    // metadata state via iceberg_metadata_staleness_ms as usual.
+#if USE_AVRO
+    const UInt64 catalog_staleness_ms = settings[DatabaseDataLakeSetting::catalog_cache_staleness_ms].value;
+    const bool use_catalog_cache = catalog_staleness_ms != 0 && !lightweight && !ignore_if_not_iceberg;
+    const String catalog_cache_key = namespace_name + "." + table_name;
+    if (use_catalog_cache)
+    {
+        auto cache = getOrCreateCatalogCache(settings);
+        if (auto cached = cache->get(catalog_cache_key))
+        {
+            auto age_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now() - cached->cached_at).count();
+            if (static_cast<UInt64>(age_ms) <= catalog_staleness_ms)
+            {
+                ProfileEvents::increment(ProfileEvents::DataLakeCatalogCacheHits);
+                if (cached->storage)
+                    return cached->storage;
+            }
+            else
+            {
+                ProfileEvents::increment(ProfileEvents::DataLakeCatalogCacheStaleMisses);
+                cache->remove(catalog_cache_key);
+            }
+        }
+        else
+        {
+            ProfileEvents::increment(ProfileEvents::DataLakeCatalogCacheMisses);
+        }
+    }
+#endif
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
         return nullptr;
     if (ignore_if_not_iceberg && !table_metadata.isDefaultReadableTable())
@@ -850,7 +916,11 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     const auto configuration = getConfiguration(storage_type, storage_settings);
 
     /// HACK: Hacky-hack to enable lazy load
-    ContextMutablePtr context_copy = Context::createCopy(context_);
+    /// When the storage will be cached for reuse across queries, build it on a
+    /// global-context copy: the query context holds query-scoped state (client
+    /// info, temporary data) that must not be retained by a long-lived storage.
+    ContextMutablePtr context_copy = Context::createCopy(
+        use_catalog_cache ? Context::getGlobalContextInstance() : context_);
     Settings settings_copy = context_copy->getSettingsCopy();
     settings_copy[Setting::use_hive_partitioning] = false;
     context_copy->setSettings(settings_copy);
@@ -955,6 +1025,13 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, storage_cluster->getName());
 
         storage_cluster->startup();
+#if USE_AVRO
+        if (use_catalog_cache)
+        {
+            auto cache = getOrCreateCatalogCache(settings);
+            cache->set(catalog_cache_key, std::make_shared<::DataLake::DataLakeCatalogCacheEntry>(storage_cluster));
+        }
+#endif
         return storage_cluster;
     }
 
@@ -991,6 +1068,13 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     if (context_->hasQueryContext() && context_->getSettingsRef()[Setting::log_queries])
         context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, result_storage->getName());
 
+#if USE_AVRO
+    if (use_catalog_cache)
+    {
+        auto cache = getOrCreateCatalogCache(settings);
+        cache->set(catalog_cache_key, std::make_shared<::DataLake::DataLakeCatalogCacheEntry>(result_storage));
+    }
+#endif
     return result_storage;
 }
 
@@ -1339,6 +1423,15 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
         std::lock_guard lock(mutex);
         database_engine_definition = new_engine_definition;
     }
+#if USE_AVRO
+    // Catalog cache depends on staleness/max_entries and on the catalog location (warehouse/url).
+    // Any ALTER that touches those settings must invalidate it.
+    {
+        std::lock_guard lock(catalog_cache_mutex);
+        if (catalog_cache)
+            catalog_cache->clear();
+    }
+#endif
     if (!local_catalog_snapshot)
     {
         /// The catalog was not built when the ALTER started. If a concurrent query
@@ -1766,6 +1859,8 @@ The following settings are supported:
 | `dlf_access_key_id`     | Access key ID for DLF access                                                            |
 | `dlf_access_key_secret` | Access key Secret for DLF access                                                        |
 | `force_add_bucket`      | When constructing object-storage URLs from the catalog-provided table location and `storage_endpoint`, prepend the bucket/container name even if the endpoint already contains it. Default: `false`. Set to `true` for catalogs that hand back paths without the bucket and require it to be added at the URL-construction step (Polaris-style paths). |
+| `catalog_cache_staleness_ms` | Staleness window for cached DataLake table metadata from the catalog (ms). `0` = no cache, always fetch. Default `10000` (10s). Similar to `iceberg_metadata_staleness_ms` but for the catalog `GET /v1/.../tables/{table}` listing rather than the table's manifest files. Avoids 53ms `QueryAnalysis` per `SELECT` on a `DataLakeCatalog` Iceberg REST catalog; use `10000-600000` depending on how stale table locations can be. |
+| `catalog_cache_max_entries` | Maximum number of DataLake table metadata entries cached per database (LRU). Default `1000`. Evicts oldest on insert. Metrics: `DataLakeCatalogCacheHits/Misses/StaleMisses` (`system.events`), `DataLakeCatalogCacheBytes/Files` (`system.metrics`). |
 
 ## Examples {#examples}
 

@@ -14,6 +14,9 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergManifestPruneCache.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergObjectMetadataCache.h>
+#include <Common/ProfileEvents.h>
 
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -40,12 +43,47 @@ namespace ProfileEvents
 {
 extern const Event IcebergPartitionPrunedFiles;
 extern const Event IcebergMinMaxIndexPrunedFiles;
+extern const Event IcebergManifestPruneCacheHits;
+extern const Event IcebergManifestPruneCacheMisses;
+extern const Event IcebergManifestPruneCacheWeightLost;
 };
+
+namespace CurrentMetrics
+{
+extern const Metric IcebergManifestPruneCacheBytes;
+extern const Metric IcebergManifestPruneCacheFiles;
+}
+
+namespace
+{
+DB::Iceberg::ManifestPruneCachePtr getPruneCache()
+{
+    static auto cache = std::make_shared<DB::Iceberg::ManifestPruneCache>("SLRU", 10000 * 256, 10000, 0.5);
+    return cache;
+}
+}
 
 namespace DB::Iceberg
 {
 
 using namespace DB;
+
+ManifestPruneCachePtr getGlobalPruneCache()
+{
+    return getPruneCache();
+}
+
+void clearGlobalPruneCache()
+{
+    if (auto cache = getPruneCache())
+        cache->clear();
+}
+
+IcebergObjectMetadataCachePtr getObjectMetadataCache()
+{
+    static auto cache = std::make_shared<IcebergObjectMetadataCache>("SLRU", 100000 * 256, 100000, 0.5);
+    return cache;
+}
 
 namespace
 {
@@ -394,7 +432,44 @@ ManifestFileIterator::ManifestFileIterator(
 
 ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
 {
-    auto parsed_entry = manifest_file_deserializer->getParsedManifestFileEntry(row_index);
+    auto prune_cache = getPruneCache();
+
+    // Partition-decision cache: keyed on the partition predicate hash only
+    // (computed once per iterator). Queries sharing a prefix share the key,
+    // so after the first query per prefix every entry walk is a cache hit -
+    // the 15us/entry KeyCondition evaluation becomes a hash lookup. The
+    // cached value holds either nullptr (PARTITION_PRUNED) or the kept
+    // entry (min-max is then re-evaluated; it depends on the point literal
+    // and is cheap for the one surviving partition). The key includes
+    // inherited_sequence_number: two snapshots can reference the same
+    // manifest file with different inherited sequence numbers, and delete
+    // matching depends on them.
+    bool partition_checked = false;
+    ProcessedManifestFileEntryPtr cached_entry;
+    const String partition_cache_key_prefix = path_to_manifest_file.serialize() + "#" + std::to_string(row_index) + "#"
+        + getPartitionFilterHash() + "#" + std::to_string(manifest_schema_id) + "#"
+        + std::to_string(table_snapshot_schema_id) + "#" + std::to_string(inherited_sequence_number);
+    if (filter_dag && partition_key_description.has_value())
+    {
+        const String & cache_key = partition_cache_key_prefix;
+        if (auto cached = prune_cache->get(cache_key))
+        {
+            ProfileEvents::increment(ProfileEvents::IcebergManifestPruneCacheHits);
+            partition_checked = true;
+            cached_entry = cached->entry;
+            if (!cached_entry)
+            {
+                ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedFiles);
+                return nullptr;
+            }
+        }
+        else
+        {
+            ProfileEvents::increment(ProfileEvents::IcebergManifestPruneCacheMisses);
+        }
+    }
+
+    auto parsed_entry = cached_entry ? cached_entry->parsed_entry : manifest_file_deserializer->getParsedManifestFileEntry(row_index);
 
     if (!parsed_entry)
         throw Exception(
@@ -480,7 +555,40 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     PruningReturnStatus pruning_status = PruningReturnStatus::NOT_PRUNED;
     if (filter_dag)
     {
-        /// Compute per-column hyperrectangles for DATA files
+        const ManifestFilesPruner * current_pruner = getOrCreatePruner(entry->resolved_schema_id);
+
+        // Partition pruning: reuse the cached decision when available,
+        // otherwise evaluate and store it (partition-only cache key).
+        if (!partition_checked && partition_key_description.has_value())
+        {
+            pruning_status = current_pruner->canBePrunedByPartition(entry);
+            if (pruning_status == PruningReturnStatus::PARTITION_PRUNED)
+            {
+                ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunedFiles);
+                insertRowToLogTable(
+                    context,
+                    [&] { return manifest_file_deserializer->getContent(row_index); },
+                    DB::IcebergMetadataLogLevel::ManifestFileEntry,
+                    path_resolver.getTableRoot(),
+                    path_to_manifest_file,
+                    row_index,
+                    pruning_status);
+                // Store the partition decision for queries sharing this prefix.
+                ManifestPruneCacheValue v;
+                v.entry = nullptr;
+                v.prune_status = static_cast<int>(pruning_status);
+                prune_cache->set(partition_cache_key_prefix, std::make_shared<ManifestPruneCacheValue>(std::move(v)));
+                return nullptr;
+            }
+            // Partition kept: remember the decision so the kept path stores the entry.
+            ManifestPruneCacheValue v;
+            v.entry = entry;
+            v.prune_status = static_cast<int>(PruningReturnStatus::NOT_PRUNED);
+            prune_cache->set(partition_cache_key_prefix, std::make_shared<ManifestPruneCacheValue>(std::move(v)));
+        }
+
+        // Min-max pruning: depends on the point literal, evaluated per query
+        // on the (few) entries that survived partition pruning.
         std::unordered_map<Int32, DB::Range> hyperrectangles;
         if (parsed_entry->content_type == FileContentType::DATA)
         {
@@ -513,10 +621,8 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
 
                 hyperrectangles.emplace(column_id, DB::Range(*left, true, *right, true));
             }
+            pruning_status = current_pruner->canBePrunedByMinMax(entry, hyperrectangles);
         }
-
-        const ManifestFilesPruner * current_pruner = getOrCreatePruner(entry->resolved_schema_id);
-        pruning_status = current_pruner->canBePruned(entry, hyperrectangles);
     }
     insertRowToLogTable(
         context,
@@ -526,6 +632,7 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         path_to_manifest_file,
         row_index,
         pruning_status);
+
     switch (pruning_status)
     {
         case PruningReturnStatus::NOT_PRUNED: {
@@ -559,7 +666,25 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
     return entry;
 }
 
-const ManifestFilesPruner * ManifestFileIterator::getOrCreatePruner(Int32 schema_id)
+String ManifestFileIterator::getPartitionFilterHash() const
+{
+    std::lock_guard lock(partition_hash_mutex);
+    if (!partition_filter_hash.empty())
+        return partition_filter_hash;
+    if (!filter_dag || !partition_key_description.has_value())
+    {
+        partition_filter_hash = "no_partition_filter";
+        return partition_filter_hash;
+    }
+    // The pruner's KeyCondition is built over the partition-key columns only,
+    // so its serialization is identical for every query sharing a prefix -
+    // the point-lookup literal does not appear in it.
+    const ManifestFilesPruner * pruner = getOrCreatePruner(manifest_schema_id);
+    partition_filter_hash = pruner->partitionFilterHash();
+    return partition_filter_hash;
+}
+
+const ManifestFilesPruner * ManifestFileIterator::getOrCreatePruner(Int32 schema_id) const
 {
     std::lock_guard lock(pruners_mutex);
     auto it = pruners_by_schema_id.find(schema_id);

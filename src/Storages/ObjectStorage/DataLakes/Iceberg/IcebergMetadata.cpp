@@ -231,7 +231,39 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
         persistent_components.table_uuid,
         persistent_components.metadata_compression_method,
         force_fetch_latest_metadata);
-    return getState(context, metadata_file_path, metadata_version);
+
+    /// Parsed-state reuse: while the metadata version is unchanged and no
+    /// time-travel settings are in play, serve the previously parsed
+    /// {snapshot, table state} without re-reading or re-parsing the metadata
+    /// JSON (which re-registers schemas into the SchemaProcessor under its
+    /// write lock on every query). Lock-free on the warm path via atomic
+    /// shared_ptr load.
+    if (!force_fetch_latest_metadata)
+    {
+        const auto & query_settings = context->getSettingsRef();
+        const bool time_travel = query_settings[Setting::iceberg_timestamp_ms].changed
+            || query_settings[Setting::iceberg_snapshot_id].changed;
+
+        if (!time_travel)
+        {
+            if (auto cached = std::atomic_load_explicit(&state_cache, std::memory_order_acquire);
+                cached && cached->metadata_version == metadata_version && cached->metadata_file_path == metadata_file_path)
+                return {cached->data_snapshot, cached->table_state};
+        }
+    }
+
+    auto result = getState(context, metadata_file_path, metadata_version);
+
+    {
+        auto entry = std::make_shared<StateCacheEntry>();
+        entry->data_snapshot = result.first;
+        entry->table_state = result.second;
+        entry->metadata_version = metadata_version;
+        entry->metadata_file_path = metadata_file_path;
+        std::atomic_store_explicit(&state_cache, std::const_pointer_cast<const StateCacheEntry>(entry), std::memory_order_release);
+    }
+
+    return result;
 }
 
 IcebergMetadata::IcebergMetadata(

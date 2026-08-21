@@ -114,7 +114,13 @@ std::pair<std::string, std::string> parseTableName(const std::string & name)
 {
     auto pos = name.rfind('.');
     if (pos == std::string::npos)
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Table cannot have empty namespace: {}", name);
+    {
+        /// Unqualified table names default to the 'default' namespace
+        /// (Iceberg REST convention), so `SELECT * FROM lake.parcels`
+        /// works on DataLakeCatalog databases without spelling
+        /// `lake.\`default.parcels\``.
+        return {"default", name};
+    }
 
     auto table_name = name.substr(pos + 1);
     auto namespace_name = name.substr(0, name.size() - table_name.size() - 1);

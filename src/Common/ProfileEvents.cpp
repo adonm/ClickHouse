@@ -108,6 +108,16 @@
     M(IcebergMetadataFilesCacheMisses, "Number of times iceberg metadata files have not been found in the iceberg metadata cache and had to be read from (remote) disk.", ValueType::Number) \
     M(IcebergMetadataFilesCacheStaleMisses, "Number of times iceberg metadata files have been found in the cache, but were considered stale and had to be read from (remote) disk.", ValueType::Number) \
     M(IcebergMetadataFilesCacheWeightLost, "Approximate number of bytes evicted from the iceberg metadata cache.", ValueType::Number) \
+    M(DataLakeCatalogCacheHits, "Number of times DataLake table metadata was served from the per-database catalog cache.", ValueType::Number) \
+    M(DataLakeCatalogCacheMisses, "Number of times DataLake table metadata was not in the catalog cache and required a REST fetch.", ValueType::Number) \
+    M(DataLakeCatalogCacheStaleMisses, "Number of times DataLake table metadata was in the cache but stale (older than catalog_cache_staleness_ms).", ValueType::Number) \
+    M(DataLakeCatalogCacheWeightLost, "Bytes evicted from the DataLake catalog cache.", ValueType::Number) \
+    M(IcebergManifestPruneCacheHits, "Number of times a manifest file prune decision was served from the prune cache.", ValueType::Number) \
+    M(IcebergManifestPruneCacheMisses, "Number of times a manifest file prune decision required recomputation.", ValueType::Number) \
+    M(IcebergManifestPruneCacheWeightLost, "Bytes evicted from the manifest prune cache.", ValueType::Number) \
+    M(IcebergObjectMetadataCacheHits, "Number of times Iceberg data/delete file metadata (etag/size) was served from the object metadata cache instead of a HEAD request.", ValueType::Number) \
+    M(IcebergObjectMetadataCacheMisses, "Number of times Iceberg data/delete file metadata required a HEAD request and was cached.", ValueType::Number) \
+    M(IcebergObjectMetadataCacheWeightLost, "Bytes evicted from the Iceberg object metadata cache.", ValueType::Number) \
     M(PaimonMetadataFilesCacheHits, "Number of times paimon metadata files have been found in the cache.", ValueType::Number) \
     M(PaimonMetadataFilesCacheMisses, "Number of times paimon metadata files have not been found in the paimon metadata cache and had to be read from (remote) disk.", ValueType::Number) \
     M(PaimonMetadataFilesCacheWeightLost, "Approximate number of bytes evicted from the paimon metadata cache.", ValueType::Number) \
