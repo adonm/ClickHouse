@@ -1070,7 +1070,10 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         /// Use is_table_function = true,
         /// because this table is actually stateless like a table function.
         /* is_table_function */true,
-        /* lazy_init */true);
+        /// A cached StoragePtr is published to concurrent queries. Initialize
+        /// its DataLakeConfiguration before publication: lazy first use writes
+        /// the configuration's unique_ptr metadata and is not thread-safe.
+        /* lazy_init */!use_catalog_cache);
 
     if (context_->hasQueryContext() && context_->getSettingsRef()[Setting::log_queries])
         context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, result_storage->getName());
