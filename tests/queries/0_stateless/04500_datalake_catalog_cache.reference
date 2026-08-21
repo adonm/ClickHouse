@@ -1,0 +1,16 @@
+--- SHOW CREATE DATABASE ---
+catalog_cache_staleness_ms = 12345, catalog_cache_max_entries = 99
+--- SYSTEM CLEAR DATALAKE CATALOG CACHE ---
+OK
+--- SYSTEM CLEAR ICEBERG MANIFEST PRUNE CACHE ---
+OK
+--- ProfileEvents existence ---
+DataLakeCatalogCacheHits
+DataLakeCatalogCacheMisses
+DataLakeCatalogCacheStaleMisses
+DataLakeCatalogCacheWeightLost
+IcebergManifestPruneCacheHits
+IcebergManifestPruneCacheMisses
+IcebergManifestPruneCacheWeightLost
+0
+OK
