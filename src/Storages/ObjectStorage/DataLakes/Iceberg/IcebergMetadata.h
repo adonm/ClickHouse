@@ -245,6 +245,13 @@ private:
         String metadata_file_path;
     };
     mutable std::shared_ptr<const StateCacheEntry> state_cache;
+
+    struct DerivedMetadataCacheEntry
+    {
+        Iceberg::TableStateSnapshot state;
+        std::shared_ptr<const StorageInMemoryMetadata> metadata;
+    };
+    mutable std::shared_ptr<const DerivedMetadataCacheEntry> derived_metadata_cache;
 };
 
 }
