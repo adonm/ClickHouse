@@ -25,7 +25,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: iceberg-warm-perf
     timeout-minutes: 360
     container:
       image: clickhouse/binary-builder:latest
@@ -50,7 +50,7 @@ jobs:
 
   stateless:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: iceberg-warm-perf
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
@@ -76,7 +76,7 @@ jobs:
   perf:
     if: github.event_name == 'workflow_dispatch' && inputs.run_perf
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: iceberg-warm-perf
     timeout-minutes: 60
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.ICEBERG_BENCH_AWS_ACCESS_KEY_ID }}
