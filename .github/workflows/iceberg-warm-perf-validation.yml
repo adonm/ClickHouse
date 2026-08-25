@@ -17,11 +17,6 @@ on:
     branches:
       - adonm/iceberg-warm-perf-validation
   workflow_dispatch:
-    inputs:
-      run_perf:
-        description: 'Run the benchmark harness after the tests (needs dataset; optional AWS creds via secrets)'
-        type: boolean
-        default: false
 
 jobs:
   build:
@@ -89,18 +84,15 @@ jobs:
           done
 
   perf:
-    if: github.event_name == 'workflow_dispatch' && inputs.run_perf
     needs: build
     runs-on: iceberg-warm-perf
-    timeout-minutes: 60
+    timeout-minutes: 120
     env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.ICEBERG_BENCH_AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.ICEBERG_BENCH_AWS_SECRET_ACCESS_KEY }}
-      S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
-      ICEBERG_TABLE_LOCATION: ${{ vars.ICEBERG_TABLE_LOCATION }}
+      TZ: Etc/UTC
+      PYTHON: python3
     steps:
       - uses: actions/checkout@v4
-      - name: Download binary
+      - name: Download validation binary
         uses: actions/download-artifact@v4
         with:
           name: clickhouse-binary
@@ -110,22 +102,32 @@ jobs:
           python-version: '3.11'
       - name: Install dataset tooling
         run: pip install "pyiceberg[sql-sqlite,s3fs]" pyarrow
+      - name: Download master baseline
+        run: |
+          mkdir -p tmp/binaries/master
+          curl -fL --retry 3 -o tmp/binaries/master/clickhouse https://builds.clickhouse.com/master/amd64/clickhouse
+          chmod +x tmp/binaries/master/clickhouse build/programs/clickhouse
       - name: Build dataset
         run: |
-          LOCATION="${ICEBERG_TABLE_LOCATION:-${{ github.workspace }}/tmp/iceberg_dataset/nyc_taxi}"
           python3 iceberg-warm-perf/build_dataset.py \
-            --location "$LOCATION" \
-            --months 2025-01
-          echo "LOCATION=$LOCATION" >> "$GITHUB_ENV"
-      - name: Run benchmark
+            --location "${{ github.workspace }}/tmp/iceberg_dataset/nyc_taxi" \
+            --download-dir "${{ github.workspace }}/tmp/iceberg_dataset/downloads" \
+            --months 2025-01,2025-02,2025-03,2025-04,2025-05,2025-06
+      - name: Run comparison
         run: |
-          chmod +x build/programs/clickhouse
-          iceberg-warm-perf/run_benchmark.sh build/programs/clickhouse "$LOCATION" ci-run
-      - name: Report
-        run: python3 iceberg-warm-perf/report.py tmp/iceberg_warm_perf_results/ci-run
+          CATALOG_URI="sqlite:///${{ github.workspace }}/tmp/iceberg_dataset/downloads/catalog.db"
+          LOCATION="${{ github.workspace }}/tmp/iceberg_dataset/nyc_taxi/nyc/taxis"
+          iceberg-warm-perf/run_benchmark_rest.sh tmp/binaries/master/clickhouse "$CATALOG_URI" "$LOCATION" before
+          CATALOG_CACHE_SETTINGS="catalog_cache_staleness_ms=600000, catalog_cache_max_entries=16" \
+            iceberg-warm-perf/run_benchmark_rest.sh build/programs/clickhouse "$CATALOG_URI" "$LOCATION" after
+          python3 iceberg-warm-perf/report.py --compare \
+            tmp/iceberg_warm_perf_results/before tmp/iceberg_warm_perf_results/after
       - name: Upload results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: perf-results
-          path: tmp/iceberg_warm_perf_results/ci-run
+          path: |
+            tmp/iceberg_warm_perf_results
+            tmp/iceberg_warm_perf_rest_catalog.log
           retention-days: 14
