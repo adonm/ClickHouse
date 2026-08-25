@@ -101,13 +101,13 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install dataset tooling
-        run: pip install "pyiceberg[sql-sqlite,s3fs]" pyarrow
+        run: pip install "pyiceberg[sql-sqlite,s3fs,pyiceberg-core]" pyarrow
       - name: Cache dataset
         id: dataset-cache
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/tmp/iceberg_dataset
-          key: iceberg-dataset-2025-01..06-v1
+          key: iceberg-dataset-2025-01..06-v2
       - name: Build dataset (cache miss)
         if: steps.dataset-cache.outputs.cache-hit != 'true'
         run: |
