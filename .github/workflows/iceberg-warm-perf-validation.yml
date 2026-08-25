@@ -123,10 +123,10 @@ jobs:
         run: |
           # Copy the cached dataset onto tmpfs when available so warm reads
           # are pure RAM; the copy takes seconds, the cache restore minutes.
-          # Prefer a dedicated host mount (BENCH_TMPFS_DIR), then /tmp.
+          # Prefer the dedicated runner ramdisk, then /tmp.
           DATASET_ROOT="${{ github.workspace }}/tmp"
           TMPFS_DIR=""
-          for candidate in "${BENCH_TMPFS_DIR:-/mnt/bench-tmpfs}" /tmp; do
+          for candidate in "${BENCH_TMPFS_DIR:-/ramdisk}" /tmp; do
             if [ -d "$candidate" ] && [ "$(df -T "$candidate" | awk 'NR==2 {print $2}')" = "tmpfs" ]; then
               TMPFS_DIR="$candidate"
               break
