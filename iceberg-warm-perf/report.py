@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Turn clickhouse-benchmark JSON results into a markdown table.
+Turn clickhouse-benchmark text output into a markdown table.
 
 Usage:
     report.py <result-dir>                  # single run
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 QUERY_NAMES = [
@@ -19,17 +20,25 @@ QUERY_NAMES = [
     "full count",
 ]
 
+QPS_RE = re.compile(r"QPS:\s*([0-9.]+)")
+PCT_RE = re.compile(r"^\s*([0-9.]+)%\s+([0-9.]+)\s*sec")
+
 
 def load_run(result_dir: Path) -> dict:
     run = {"queries": {}, "events": {}}
     for i, name in enumerate(QUERY_NAMES, start=1):
-        path = result_dir / f"query_{i}.json"
+        path = result_dir / f"query_{i}.txt"
         if not path.exists():
             continue
-        data = json.loads(path.read_text())
-        # clickhouse-benchmark emits one JSON object per line, last one is the summary.
-        rows = [line for line in data.splitlines()] if isinstance(data, str) else []
-        stats = json.loads(rows[-1]) if rows else {}
+        text = path.read_text()
+        stats = {"qps": None, "percentiles": {}}
+        m = QPS_RE.search(text)
+        if m:
+            stats["qps"] = float(m.group(1))
+        for line in text.splitlines():
+            m = PCT_RE.match(line)
+            if m:
+                stats["percentiles"][float(m.group(1))] = float(m.group(2))
         run["queries"][name] = stats
     events_path = result_dir / "events.jsonl"
     if events_path.exists():
@@ -39,10 +48,20 @@ def load_run(result_dir: Path) -> dict:
     return run
 
 
+def pct(stats: dict, wanted: float):
+    percentiles = stats.get("percentiles", {})
+    if wanted in percentiles:
+        return percentiles[wanted]
+    if not percentiles:
+        return None
+    # nearest available percentile
+    return min(percentiles.items(), key=lambda kv: abs(kv[0] - wanted))[1]
+
+
 def fmt_ms(value) -> str:
     if value is None:
         return "-"
-    return f"{float(value):.2f} ms"
+    return f"{float(value) * 1000:.2f} ms"
 
 
 def print_run(label: str, run: dict) -> None:
@@ -51,10 +70,11 @@ def print_run(label: str, run: dict) -> None:
     print("| Query | QPS | p50 | p95 |")
     print("|---|---|---|---|")
     for name, stats in run["queries"].items():
+        qps = stats.get("qps")
         print(
-            f"| {name} | {stats.get('queries_per_second', '-'):.2f} "
-            f"| {fmt_ms(stats.get('quantiles', {}).get('0.50'))} "
-            f"| {fmt_ms(stats.get('quantiles', {}).get('0.95'))} |"
+            f"| {name} | {qps if qps is None else f'{qps:.2f}'} "
+            f"| {fmt_ms(pct(stats, 50.0))} "
+            f"| {fmt_ms(pct(stats, 95.0))} |"
         )
     print()
     if run["events"]:
@@ -83,13 +103,13 @@ def main() -> None:
         for name in QUERY_NAMES:
             b = before["queries"].get(name, {})
             a = after["queries"].get(name, {})
-            b_p50 = b.get("quantiles", {}).get("0.50")
-            a_p50 = a.get("quantiles", {}).get("0.50")
-            b_qps = b.get("queries_per_second")
-            a_qps = a.get("queries_per_second")
+            b_p50 = pct(b, 50.0)
+            a_p50 = pct(a, 50.0)
+            b_qps = b.get("qps")
+            a_qps = a.get("qps")
             delta = "-"
-            if b_p50 is not None and a_p50 is not None and float(b_p50) > 0:
-                delta = f"{(float(a_p50) / float(b_p50) - 1) * 100:+.1f}%"
+            if b_p50 and a_p50:
+                delta = f"{(a_p50 / b_p50 - 1) * 100:+.1f}%"
             print(
                 f"| {name} | {fmt_ms(b_p50)} | {fmt_ms(a_p50)} | {delta} "
                 f"| {b_qps if b_qps is None else f'{b_qps:.2f}'} "

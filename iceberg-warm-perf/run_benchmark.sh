@@ -30,9 +30,22 @@ mkdir -p "$WORK_DIR" "$RESULT_DIR"
 HTTP_PORT=18123
 TCP_PORT=19000
 
+ICEBERG_ENGINE="Iceberg"
+ICEBERG_ARGS="'$LOCATION'"
+USER_FILES="$WORK_DIR/user_files"
+if [[ "$LOCATION" == s3://* ]]; then
+    ICEBERG_ARGS+=", '${AWS_ACCESS_KEY_ID:-}', '${AWS_SECRET_ACCESS_KEY:-}'"
+    if [[ -n "${S3_ENDPOINT:-}" ]]; then
+        ICEBERG_ARGS+=", '${S3_ENDPOINT}'"
+    fi
+else
+    ICEBERG_ENGINE="IcebergLocal"
+    ICEBERG_ARGS="'$(realpath "$LOCATION")', 'parquet'"
+    USER_FILES="$(dirname "$(realpath "$LOCATION")")"
+fi
+
 echo "starting server on http port $HTTP_PORT (log: $SERVER_LOG)"
-"$BINARY" server \
-    --config-file <(cat <<EOF
+cat > "$WORK_DIR/config.xml" <<EOF
 <clickhouse>
     <logger>
         <level>warning</level>
@@ -43,12 +56,28 @@ echo "starting server on http port $HTTP_PORT (log: $SERVER_LOG)"
     <tcp_port>$TCP_PORT</tcp_port>
     <path>$WORK_DIR</path>
     <tmp_path>$WORK_DIR/tmp</tmp_path>
-    <user_files_path>$WORK_DIR/user_files</user_files_path>
+    <user_files_path>$USER_FILES</user_files_path>
     <listen_host>127.0.0.1</listen_host>
     <mark_cache_size>536870912</mark_cache_size>
+    <profiles>
+        <default></default>
+    </profiles>
+    <users>
+        <default>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </default>
+    </users>
+    <quotas>
+        <default></default>
+    </quotas>
 </clickhouse>
 EOF
-    ) &
+"$BINARY" server --config-file "$WORK_DIR/config.xml" &
 SERVER_PID=$!
 trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
 
@@ -60,20 +89,10 @@ for _ in $(seq 1 60); do
 done
 "$BINARY" client --port "$TCP_PORT" --query "SELECT 1" >/dev/null
 
-ICEBERG_ARGS="'$LOCATION'"
-if [[ "$LOCATION" == s3://* ]]; then
-    ICEBERG_ARGS+=", '${AWS_ACCESS_KEY_ID:-}', '${AWS_SECRET_ACCESS_KEY:-}'"
-    if [[ -n "${S3_ENDPOINT:-}" ]]; then
-        ICEBERG_ARGS+=", '${S3_ENDPOINT}'"
-    fi
-else
-    ICEBERG_ARGS+=", 'no-ak', 'no-sk'"
-fi
-
 "$BINARY" client --port "$TCP_PORT" --multiquery <<EOF
 SET allow_experimental_database_iceberg = 1;
 DROP TABLE IF EXISTS default.taxi;
-CREATE TABLE default.taxi ENGINE = Iceberg($ICEBERG_ARGS);
+CREATE TABLE default.taxi ENGINE = $ICEBERG_ENGINE($ICEBERG_ARGS);
 EOF
 
 echo "warm-up query"
@@ -90,8 +109,7 @@ for i in "${!QUERIES[@]}"; do
     "$BINARY" benchmark \
         --host 127.0.0.1 --port "$TCP_PORT" \
         --concurrency 1 --iterations 10 \
-        --json "$RESULT_DIR/query_$((i + 1)).json" \
-        <<< "${QUERIES[$i]}"
+        <<< "${QUERIES[$i]}" 2> "$RESULT_DIR/query_$((i + 1)).txt"
 done
 
 "$BINARY" client --port "$TCP_PORT" --query "SYSTEM FLUSH LOGS" >/dev/null

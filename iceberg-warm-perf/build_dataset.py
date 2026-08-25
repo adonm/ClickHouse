@@ -29,9 +29,9 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 from pyiceberg.catalog import load_catalog
-from pyiceberg.partitioning import PartitionSpec
+from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
-from pyiceberg.table.sorting import SortField, SortOrder
+from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
 from pyiceberg.transforms import DayTransform, IdentityTransform
 from pyiceberg.types import (
     DoubleType,
@@ -137,8 +137,17 @@ def main() -> None:
         table = catalog.load_table("nyc.taxis")
         print(f"table nyc.taxis already exists ({table.current_snapshot()})")
     except Exception:
-        partition_spec = PartitionSpec(("tpep_pickup_datetime", DayTransform()))
-        sort_order = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
+        partition_spec = PartitionSpec(
+            PartitionField(source_id=2, field_id=1000, transform=DayTransform(), name="tpep_pickup_datetime_day")
+        )
+        sort_order = SortOrder(
+            SortField(
+                source_id=2,
+                transform=IdentityTransform(),
+                direction=SortDirection.ASC,
+                null_order=NullOrder.NULLS_FIRST,
+            )
+        )
         table = catalog.create_table(
             "nyc.taxis",
             schema=SCHEMA,
