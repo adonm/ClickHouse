@@ -67,6 +67,7 @@ jobs:
         run: |
           chmod +x build/programs/clickhouse
           rm -rf tmp/clickhouse_test_server
+          mkdir -p tmp
           cp iceberg-warm-perf/tests/server-config.xml tmp/clickhouse_test_server-config.xml
           sed -i "s|@USER_FILES@|${CLICKHOUSE_USER_FILES}|" tmp/clickhouse_test_server-config.xml
           build/programs/clickhouse server --config-file tmp/clickhouse_test_server-config.xml > tmp/clickhouse_test_server.log 2>&1 &
