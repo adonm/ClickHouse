@@ -53,6 +53,7 @@ jobs:
     runs-on: iceberg-warm-perf
     timeout-minutes: 90
     env:
+      TZ: Etc/UTC
       CLICKHOUSE_PORT_TCP: 19001
       CLICKHOUSE_PORT_HTTP: 18124
       CLICKHOUSE_USER_FILES: ${{ github.workspace }}/tmp/clickhouse_test_server/user_files
