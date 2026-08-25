@@ -90,7 +90,6 @@ jobs:
     env:
       TZ: Etc/UTC
       PYTHON: python3
-      BENCH_CONCURRENCY: 8
     steps:
       - uses: actions/checkout@v4
       - name: Download validation binary
@@ -126,11 +125,14 @@ jobs:
         run: |
           CATALOG_URI="sqlite:///$DATASET_ROOT/iceberg_dataset/downloads/catalog.db"
           LOCATION="$DATASET_ROOT/iceberg_dataset/nyc_taxi/nyc/taxis"
-          iceberg-warm-perf/run_benchmark_rest.sh tmp/binaries/master/clickhouse "$CATALOG_URI" "$LOCATION" before
-          CATALOG_CACHE_SETTINGS="catalog_cache_staleness_ms=600000, catalog_cache_max_entries=16" \
-            iceberg-warm-perf/run_benchmark_rest.sh build/programs/clickhouse "$CATALOG_URI" "$LOCATION" after
-          python3 iceberg-warm-perf/report.py --compare \
-            tmp/iceberg_warm_perf_results/before tmp/iceberg_warm_perf_results/after
+          for C in 8 64; do
+            echo "===== concurrency $C ====="
+            BENCH_CONCURRENCY=$C iceberg-warm-perf/run_benchmark_rest.sh tmp/binaries/master/clickhouse "$CATALOG_URI" "$LOCATION" "before-$C"
+            BENCH_CONCURRENCY=$C CATALOG_CACHE_SETTINGS="catalog_cache_staleness_ms=600000, catalog_cache_max_entries=16" \
+              iceberg-warm-perf/run_benchmark_rest.sh build/programs/clickhouse "$CATALOG_URI" "$LOCATION" "after-$C"
+            python3 iceberg-warm-perf/report.py --compare \
+              "tmp/iceberg_warm_perf_results/before-$C" "tmp/iceberg_warm_perf_results/after-$C"
+          done
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
