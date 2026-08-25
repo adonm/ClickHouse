@@ -369,6 +369,8 @@
     M(DataLakeCatalogCacheFiles, "Number of entries in the DataLake catalog storage cache") \
     M(IcebergObjectMetadataCacheBytes, "Size of the Iceberg object metadata cache in bytes") \
     M(IcebergObjectMetadataCacheFiles, "Number of entries in the Iceberg object metadata cache") \
+    M(IcebergManifestPruneCacheBytes, "Size of the Iceberg manifest candidate cache in bytes") \
+    M(IcebergManifestPruneCacheFiles, "Number of entries in the Iceberg manifest candidate cache") \
     M(PaimonMetadataFilesCacheBytes, "Size of the Paimon metadata cache in bytes") \
     M(PaimonMetadataFilesCacheFiles, "Number of cached files in the Paimon metadata cache") \
     M(ParquetMetadataCacheBytes, "Size of the Parquet metadata cache in bytes") \

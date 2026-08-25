@@ -632,6 +632,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::CLEAR_S3_CLIENT_CACHE:
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
         case Type::CLEAR_DATALAKE_CATALOG_CACHE:
+        case Type::CLEAR_ICEBERG_MANIFEST_PRUNE_CACHE:
         case Type::CLEAR_PAIMON_METADATA_CACHE:
         case Type::CLEAR_PARQUET_METADATA_CACHE:
         case Type::CLEAR_POINT_IN_POLYGON_CACHE:
