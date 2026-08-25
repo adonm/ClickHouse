@@ -35,6 +35,8 @@ TCP_PORT=19000
 USER_FILES="$(dirname "$(realpath "$LOCATION")")"
 
 WAREHOUSE="$(dirname "$USER_FILES")"
+export CATALOG_URI
+export WAREHOUSE
 PORT="$REST_PORT" "$PYTHON" "$ROOT/iceberg-warm-perf/rest_catalog_server.py" \
     > "$ROOT/tmp/iceberg_warm_perf_rest_catalog.log" 2>&1 &
 REST_PID=$!

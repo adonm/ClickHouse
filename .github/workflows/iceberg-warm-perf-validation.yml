@@ -136,6 +136,8 @@ jobs:
         run: |
           CATALOG_URI="sqlite:///$DATASET_ROOT/iceberg_dataset/downloads/catalog.db"
           LOCATION="$DATASET_ROOT/iceberg_dataset/nyc_taxi/nyc/taxis"
+          export CATALOG_URI
+          export WAREHOUSE="$DATASET_ROOT/iceberg_dataset/nyc_taxi"
           for C in 8 64; do
             echo "===== concurrency $C ====="
             BENCH_CONCURRENCY=$C iceberg-warm-perf/run_benchmark_rest.sh tmp/binaries/master/clickhouse "$CATALOG_URI" "$LOCATION" "before-$C"
