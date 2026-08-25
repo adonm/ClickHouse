@@ -78,9 +78,11 @@ carried into the individual PRs:
 
 ## CI notes
 
-GitHub-hosted runners are small (4 vCPU / 16 GB / ~14 GB disk), so the build
-job uses a `Release` build with ccache and only builds the `clickhouse` target.
-If the build job runs out of disk, drop the ccache action or build with
-`-DENABLE_LIBRARIES=OFF` against a system toolchain. Perf numbers from shared
-runners are noisy; use them only for gross before/after sanity, and re-run the
-real numbers on a dedicated machine.
+The build job runs in the `clickhouse/binary-builder` container (the image
+upstream CI uses), since ClickHouse master requires Clang ≥ 21 while
+`ubuntu-latest` ships Clang 18. GitHub-hosted runners are small (4 vCPU /
+16 GB / ~14 GB disk), so the job builds only the `clickhouse` target in
+`Release` mode; if it runs out of disk, check the "Disk usage" step and trim
+contrib or build without ccache. Perf numbers from shared runners are noisy;
+use them only for gross before/after sanity, and re-run the real numbers on a
+dedicated machine.
