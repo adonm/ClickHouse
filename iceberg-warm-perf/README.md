@@ -26,15 +26,17 @@ root, which is gitignored.
 ## Quick start
 
 ```bash
-# 1. Build the dataset (local filesystem; ~3M rows/month, ~50 MB/month)
+# 1. Build the dataset (local filesystem; ~4M rows/month, ~50 MB/month)
+#    Put it on tmpfs so warm reads are pure RAM - disk I/O otherwise
+#    dominates and hides the cache wins on both sides of the comparison.
 pip install "pyiceberg[sql-sqlite,s3fs]" pyarrow
 python3 iceberg-warm-perf/build_dataset.py \
-    --location "$PWD/tmp/iceberg_dataset/nyc_taxi" \
+    --location /tmp/opencode/iceberg_dataset/nyc_taxi \
     --months 2025-01,2025-02
 
 # 2. Run the benchmark against a ClickHouse binary
 iceberg-warm-perf/run_benchmark.sh build/programs/clickhouse \
-    "$PWD/tmp/iceberg_dataset/nyc_taxi"
+    /tmp/opencode/iceberg_dataset/nyc_taxi/nyc/taxis
 
 # 3. Report (or compare two runs)
 python3 iceberg-warm-perf/report.py tmp/iceberg_warm_perf_results/latest
