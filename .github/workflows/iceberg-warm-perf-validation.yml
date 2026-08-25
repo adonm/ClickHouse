@@ -102,19 +102,17 @@ jobs:
           python-version: '3.11'
       - name: Install dataset tooling
         run: pip install "pyiceberg[sql-sqlite,s3fs,pyiceberg-core]" pyarrow
-      - name: Cache dataset
-        id: dataset-cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/tmp/iceberg_dataset
-          key: iceberg-dataset-2025-01..06-v2
-      - name: Build dataset (cache miss)
-        if: steps.dataset-cache.outputs.cache-hit != 'true'
+      - name: Build dataset (if missing)
         run: |
-          python3 iceberg-warm-perf/build_dataset.py \
-            --location "${{ github.workspace }}/tmp/iceberg_dataset/nyc_taxi" \
-            --download-dir "${{ github.workspace }}/tmp/iceberg_dataset/downloads" \
-            --months 2025-01,2025-02,2025-03,2025-04,2025-05,2025-06
+          # The runner workspace persists between runs, so the dataset is
+          # built once and reused; actions/cache restore proved too flaky
+          # on this link.
+          if [ ! -d "${{ github.workspace }}/tmp/iceberg_dataset/nyc_taxi/nyc/taxis/metadata" ]; then
+            python3 iceberg-warm-perf/build_dataset.py \
+              --location "${{ github.workspace }}/tmp/iceberg_dataset/nyc_taxi" \
+              --download-dir "${{ github.workspace }}/tmp/iceberg_dataset/downloads" \
+              --months 2025-01,2025-02,2025-03,2025-04,2025-05,2025-06
+          fi
       - name: Download master baseline
         run: |
           mkdir -p tmp/binaries/master
