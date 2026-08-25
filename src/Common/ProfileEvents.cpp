@@ -112,9 +112,6 @@
     M(DataLakeCatalogCacheMisses, "Number of DataLake catalog storage cache misses.", ValueType::Number) \
     M(DataLakeCatalogCacheStaleMisses, "Number of stale DataLake catalog storage cache entries.", ValueType::Number) \
     M(DataLakeCatalogCacheWeightLost, "Approximate bytes evicted from the DataLake catalog storage cache.", ValueType::Number) \
-    M(IcebergObjectMetadataCacheHits, "Number of Iceberg data/delete file metadata cache hits.", ValueType::Number) \
-    M(IcebergObjectMetadataCacheMisses, "Number of Iceberg data/delete file metadata cache misses.", ValueType::Number) \
-    M(IcebergObjectMetadataCacheWeightLost, "Approximate bytes evicted from the Iceberg object metadata cache.", ValueType::Number) \
     M(IcebergManifestPruneCacheHits, "Number of Iceberg manifest candidate cache hits.", ValueType::Number) \
     M(IcebergManifestPruneCacheMisses, "Number of Iceberg manifest candidate cache misses.", ValueType::Number) \
     M(IcebergManifestPruneCacheWeightLost, "Approximate bytes evicted from the Iceberg manifest candidate cache.", ValueType::Number) \

@@ -77,8 +77,7 @@ jobs:
           for t in \
               04500_datalake_catalog_cache \
               04501_iceberg_manifest_prune_cache \
-              05024_parquet_sorted_row_group_point_lookup \
-              05025_iceberg_object_metadata_cache; do
+              05024_parquet_sorted_row_group_point_lookup; do
             echo "=== $t ==="
             ./clickhouse-test --binary ../build/programs/clickhouse "$t"
           done
@@ -124,13 +123,21 @@ jobs:
         run: |
           # Copy the cached dataset onto tmpfs when available so warm reads
           # are pure RAM; the copy takes seconds, the cache restore minutes.
+          # Prefer a dedicated host mount (BENCH_TMPFS_DIR), then /tmp.
           DATASET_ROOT="${{ github.workspace }}/tmp"
-          if [ "$(df -T /tmp | awk 'NR==2 {print $2}')" = "tmpfs" ]; then
-            rm -rf /tmp/iceberg_dataset
-            cp -a "${{ github.workspace }}/tmp/iceberg_dataset" /tmp/iceberg_dataset
-            DATASET_ROOT=/tmp
+          TMPFS_DIR=""
+          for candidate in "${BENCH_TMPFS_DIR:-/mnt/bench-tmpfs}" /tmp; do
+            if [ -d "$candidate" ] && [ "$(df -T "$candidate" | awk 'NR==2 {print $2}')" = "tmpfs" ]; then
+              TMPFS_DIR="$candidate"
+              break
+            fi
+          done
+          if [ -n "$TMPFS_DIR" ]; then
+            rm -rf "$TMPFS_DIR/iceberg_dataset"
+            cp -a "${{ github.workspace }}/tmp/iceberg_dataset" "$TMPFS_DIR/iceberg_dataset"
+            DATASET_ROOT="$TMPFS_DIR"
           fi
-          echo "DATASET_ROOT=$DATASET_ROOT"
+          echo "DATASET_ROOT=$DATASET_ROOT (tmpfs: ${TMPFS_DIR:-none})"
           echo "DATASET_ROOT=$DATASET_ROOT" >> "$GITHUB_ENV"
       - name: Run comparison
         run: |

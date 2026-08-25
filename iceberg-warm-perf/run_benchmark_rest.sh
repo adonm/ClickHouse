@@ -129,6 +129,9 @@ done
        OR event LIKE '%DataLakeCatalog%'
        OR event LIKE '%ParquetOrderedRowGroup%'
        OR event = 'ParquetRowGroupMinMaxPredicateChecks'
+       OR event IN ('OSReadBytes', 'OSWriteBytes', 'OSIOWaitMicroseconds',
+                    'DiskReadElapsedMicroseconds', 'DiskWriteElapsedMicroseconds',
+                    'FileSegmentReadMicroseconds', 'FileSegmentUseMicroseconds')
     FORMAT JSONEachRow" > "$RESULT_DIR/events.jsonl"
 
 echo "results written to $RESULT_DIR"
