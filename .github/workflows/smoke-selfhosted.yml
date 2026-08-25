@@ -13,7 +13,7 @@ jobs:
     steps:
       - name: Host checks
         run: |
-          echo "HOST JOB OK"
+          echo "HOST JOB OK (v2)"
           uname -a
           whoami
           echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
