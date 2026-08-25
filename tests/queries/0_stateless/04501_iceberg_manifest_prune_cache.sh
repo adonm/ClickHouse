@@ -23,26 +23,26 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO iceberg_prune_test SETTINGS allow_insert_into
 
 # First query with filter that prunes to part=1 (should miss prune cache)
 $CLICKHOUSE_CLIENT -q "SELECT * FROM iceberg_prune_test WHERE part = 1 SETTINGS use_iceberg_partition_pruning=1" --query_id="${QID_PREFIX}1" > /dev/null
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "SELECT ProfileEvents['IcebergManifestPruneCacheMisses'] > 0 AS miss1, ProfileEvents['IcebergPartitionPrunedFiles'] > 0 AS pruned1 FROM system.query_log WHERE query_id='${QID_PREFIX}1' AND type='QueryFinish'"
 
 # A different point literal in the same partition should jump directly to
 # the cached candidate rows.
 $CLICKHOUSE_CLIENT -q "SELECT * FROM iceberg_prune_test WHERE part = 1 AND id = 5 SETTINGS use_iceberg_partition_pruning=1" --query_id="${QID_PREFIX}2" > /dev/null
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "SELECT ProfileEvents['IcebergManifestPruneCacheHits'] > 0 AS hit2 FROM system.query_log WHERE query_id='${QID_PREFIX}2' AND type='QueryFinish'"
 
 # A new snapshot must not reuse the old candidate vector; its newly added
 # file has to be visible immediately.
 $CLICKHOUSE_CLIENT -q "INSERT INTO iceberg_prune_test SETTINGS allow_insert_into_iceberg=1 VALUES (6, 1)"
 $CLICKHOUSE_CLIENT -q "SELECT id FROM iceberg_prune_test WHERE part = 1 AND id = 6 SETTINGS use_iceberg_partition_pruning=1" --query_id="${QID_PREFIX}3"
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "SELECT ProfileEvents['IcebergManifestPruneCacheMisses'] > 0 AS miss3 FROM system.query_log WHERE query_id='${QID_PREFIX}3' AND type='QueryFinish'"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM CLEAR ICEBERG MANIFEST PRUNE CACHE"
 echo "CLEAR OK"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM iceberg_prune_test WHERE part = 1 SETTINGS use_iceberg_partition_pruning=1" --query_id="${QID_PREFIX}4" > /dev/null
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "SELECT ProfileEvents['IcebergManifestPruneCacheMisses'] > 0 AS miss4 FROM system.query_log WHERE query_id='${QID_PREFIX}4' AND type='QueryFinish'"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE iceberg_prune_test"
