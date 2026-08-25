@@ -102,24 +102,35 @@ jobs:
           python-version: '3.11'
       - name: Install dataset tooling
         run: pip install "pyiceberg[sql-sqlite,s3fs]" pyarrow
+      - name: Cache dataset
+        id: dataset-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/tmp/iceberg_dataset
+          key: iceberg-dataset-2025-01..06-v1
+      - name: Build dataset (cache miss)
+        if: steps.dataset-cache.outputs.cache-hit != 'true'
+        run: |
+          python3 iceberg-warm-perf/build_dataset.py \
+            --location "${{ github.workspace }}/tmp/iceberg_dataset/nyc_taxi" \
+            --download-dir "${{ github.workspace }}/tmp/iceberg_dataset/downloads" \
+            --months 2025-01,2025-02,2025-03,2025-04,2025-05,2025-06
       - name: Download master baseline
         run: |
           mkdir -p tmp/binaries/master
           curl -fL --retry 3 -o tmp/binaries/master/clickhouse https://builds.clickhouse.com/master/amd64/clickhouse
           chmod +x tmp/binaries/master/clickhouse build/programs/clickhouse
-      - name: Build dataset
+      - name: Stage dataset on tmpfs
         run: |
-          # Put the dataset on tmpfs when available so warm reads are pure
-          # RAM and disk I/O does not mask the cache wins on either side.
+          # Copy the cached dataset onto tmpfs when available so warm reads
+          # are pure RAM; the copy takes seconds, the cache restore minutes.
           DATASET_ROOT="${{ github.workspace }}/tmp"
           if [ "$(df -T /tmp | awk 'NR==2 {print $2}')" = "tmpfs" ]; then
+            rm -rf /tmp/iceberg_dataset
+            cp -a "${{ github.workspace }}/tmp/iceberg_dataset" /tmp/iceberg_dataset
             DATASET_ROOT=/tmp
           fi
           echo "DATASET_ROOT=$DATASET_ROOT"
-          python3 iceberg-warm-perf/build_dataset.py \
-            --location "$DATASET_ROOT/iceberg_dataset/nyc_taxi" \
-            --download-dir "$DATASET_ROOT/iceberg_dataset/downloads" \
-            --months 2025-01,2025-02,2025-03,2025-04,2025-05,2025-06
           echo "DATASET_ROOT=$DATASET_ROOT" >> "$GITHUB_ENV"
       - name: Run comparison
         run: |
