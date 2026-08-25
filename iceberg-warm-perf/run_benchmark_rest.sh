@@ -18,6 +18,7 @@ CATALOG_URI="${2:?usage: run_benchmark_rest.sh <clickhouse-binary> <catalog-uri>
 LOCATION="${3:?usage: run_benchmark_rest.sh <clickhouse-binary> <catalog-uri> <table-location> [run-name]}"
 RUN_NAME="${4:-latest}"
 PYTHON="${PYTHON:-python3}"
+CONCURRENCY="${BENCH_CONCURRENCY:-1}"
 
 BINARY="$(realpath "$BINARY")"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -111,11 +112,11 @@ QUERIES=(
     "SELECT count() FROM bench_catalog.\`nyc.taxis\`"
 )
 
-echo "benchmarking (concurrency 1, 10 iterations per query)"
+echo "benchmarking (concurrency $CONCURRENCY, 10 iterations per query)"
 for i in "${!QUERIES[@]}"; do
     "$BINARY" benchmark \
         --host 127.0.0.1 --port "$TCP_PORT" \
-        --concurrency 1 --iterations 10 \
+        --concurrency "$CONCURRENCY" --iterations 10 \
         <<< "${QUERIES[$i]}" 2> "$RESULT_DIR/query_$((i + 1)).txt"
 done
 

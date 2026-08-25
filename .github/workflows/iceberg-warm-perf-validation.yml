@@ -90,6 +90,7 @@ jobs:
     env:
       TZ: Etc/UTC
       PYTHON: python3
+      BENCH_CONCURRENCY: 8
     steps:
       - uses: actions/checkout@v4
       - name: Download validation binary
@@ -109,14 +110,22 @@ jobs:
           chmod +x tmp/binaries/master/clickhouse build/programs/clickhouse
       - name: Build dataset
         run: |
+          # Put the dataset on tmpfs when available so warm reads are pure
+          # RAM and disk I/O does not mask the cache wins on either side.
+          DATASET_ROOT="${{ github.workspace }}/tmp"
+          if [ "$(df -T /tmp | awk 'NR==2 {print $2}')" = "tmpfs" ]; then
+            DATASET_ROOT=/tmp
+          fi
+          echo "DATASET_ROOT=$DATASET_ROOT"
           python3 iceberg-warm-perf/build_dataset.py \
-            --location "${{ github.workspace }}/tmp/iceberg_dataset/nyc_taxi" \
-            --download-dir "${{ github.workspace }}/tmp/iceberg_dataset/downloads" \
+            --location "$DATASET_ROOT/iceberg_dataset/nyc_taxi" \
+            --download-dir "$DATASET_ROOT/iceberg_dataset/downloads" \
             --months 2025-01,2025-02,2025-03,2025-04,2025-05,2025-06
+          echo "DATASET_ROOT=$DATASET_ROOT" >> "$GITHUB_ENV"
       - name: Run comparison
         run: |
-          CATALOG_URI="sqlite:///${{ github.workspace }}/tmp/iceberg_dataset/downloads/catalog.db"
-          LOCATION="${{ github.workspace }}/tmp/iceberg_dataset/nyc_taxi/nyc/taxis"
+          CATALOG_URI="sqlite:///$DATASET_ROOT/iceberg_dataset/downloads/catalog.db"
+          LOCATION="$DATASET_ROOT/iceberg_dataset/nyc_taxi/nyc/taxis"
           iceberg-warm-perf/run_benchmark_rest.sh tmp/binaries/master/clickhouse "$CATALOG_URI" "$LOCATION" before
           CATALOG_CACHE_SETTINGS="catalog_cache_staleness_ms=600000, catalog_cache_max_entries=16" \
             iceberg-warm-perf/run_benchmark_rest.sh build/programs/clickhouse "$CATALOG_URI" "$LOCATION" after
