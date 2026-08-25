@@ -34,6 +34,18 @@ CATALOG_URI = os.getenv("CATALOG_URI", "sqlite:////tmp/opencode/iceberg_dataset/
 WAREHOUSE = os.getenv("WAREHOUSE", "/tmp/opencode/iceberg_dataset")
 BASE_LOCATION = os.getenv("BASE_LOCATION", f"file://{WAREHOUSE}")
 
+# When the dataset is staged to another root (e.g. a ramdisk), the sqlite
+# catalog and the metadata files still carry the original absolute paths.
+# Rewrite them on the fly so the catalog can be moved without rebuilding.
+REWRITE_SRC = os.getenv("PATH_REWRITE_SRC")
+REWRITE_DST = os.getenv("PATH_REWRITE_DST")
+
+
+def rewrite_path(path: str) -> str:
+    if REWRITE_SRC and REWRITE_DST and path.startswith(REWRITE_SRC):
+        return REWRITE_DST + path[len(REWRITE_SRC):]
+    return path
+
 catalog = load_catalog(CATALOG_NAME, type="sql", uri=CATALOG_URI, warehouse=WAREHOUSE)
 TABLES = {
     "nyc": sorted(identifier[-1] for identifier in catalog.list_tables("nyc") if len(identifier) > 1)
@@ -79,18 +91,17 @@ class Handler(BaseHTTPRequestHandler):
                 if name not in TABLES["nyc"]:
                     return {"error": {"type": "NoSuchTableException", "message": name}}, 404
                 table = catalog.load_table(f"nyc.{name}")
+                metadata_location = rewrite_path(table.metadata_location)
                 # Serve the on-disk metadata file: it uses the kebab-case
                 # field names ClickHouse's parser expects (PyIceberg's
                 # json() would emit snake_case).
-                with open(table.metadata_location, encoding="utf-8") as metadata_file:
+                with open(metadata_location, encoding="utf-8") as metadata_file:
                     metadata = json.load(metadata_file)
                 # PyIceberg writes bare filesystem paths; ClickHouse's local
                 # storage requires a file:// scheme.
-                if "location" in metadata and "://" not in metadata["location"]:
-                    metadata["location"] = "file://" + metadata["location"]
-                metadata_location = table.metadata_location
-                if "://" not in metadata_location:
-                    metadata_location = "file://" + metadata_location
+                if "location" in metadata:
+                    metadata["location"] = "file://" + rewrite_path(metadata["location"]).lstrip("file://")
+                metadata_location = "file://" + metadata_location.lstrip("file://")
                 return {
                     "metadata-location": metadata_location,
                     "metadata": metadata,

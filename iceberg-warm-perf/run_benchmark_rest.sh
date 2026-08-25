@@ -37,6 +37,8 @@ USER_FILES="$(dirname "$(realpath "$LOCATION")")"
 WAREHOUSE="$(dirname "$USER_FILES")"
 export CATALOG_URI
 export WAREHOUSE
+export PATH_REWRITE_SRC="${PATH_REWRITE_SRC:-}"
+export PATH_REWRITE_DST="${PATH_REWRITE_DST:-}"
 PORT="$REST_PORT" "$PYTHON" "$ROOT/iceberg-warm-perf/rest_catalog_server.py" \
     > "$ROOT/tmp/iceberg_warm_perf_rest_catalog.log" 2>&1 &
 REST_PID=$!

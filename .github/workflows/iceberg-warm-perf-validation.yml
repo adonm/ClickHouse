@@ -137,6 +137,10 @@ jobs:
             rm -rf "$TMPFS_DIR/iceberg_dataset"
             cp -a "${{ github.workspace }}/tmp/iceberg_dataset" "$TMPFS_DIR/iceberg_dataset"
             DATASET_ROOT="$TMPFS_DIR"
+            export PATH_REWRITE_SRC="${{ github.workspace }}/tmp/iceberg_dataset"
+            export PATH_REWRITE_DST="$TMPFS_DIR/iceberg_dataset"
+            echo "PATH_REWRITE_SRC=$PATH_REWRITE_SRC" >> "$GITHUB_ENV"
+            echo "PATH_REWRITE_DST=$PATH_REWRITE_DST" >> "$GITHUB_ENV"
           fi
           echo "DATASET_ROOT=$DATASET_ROOT (tmpfs: ${TMPFS_DIR:-none})"
           echo "DATASET_ROOT=$DATASET_ROOT" >> "$GITHUB_ENV"
