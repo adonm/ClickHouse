@@ -1,0 +1,33 @@
+name: smoke-selfhosted
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ci/smoke-selfhosted
+
+jobs:
+  host-smoke:
+    name: host-job (no container)
+    runs-on: iceberg-warm-perf
+    steps:
+      - name: Host checks
+        run: |
+          echo "HOST JOB OK"
+          uname -a
+          whoami
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+          df -h "$GITHUB_WORKSPACE" | tail -1
+
+  container-smoke:
+    name: container-job (ubuntu:24.04)
+    runs-on: iceberg-warm-perf
+    container:
+      image: ubuntu:24.04
+    steps:
+      - name: Container checks
+        run: |
+          echo "CONTAINER JOB OK"
+          uname -a
+          grep PRETTY_NAME /etc/os-release
+          command -v bash python3 apt-get || true
