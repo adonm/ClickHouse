@@ -77,7 +77,8 @@ jobs:
           for t in \
               04500_datalake_catalog_cache \
               04501_iceberg_manifest_prune_cache \
-              05024_parquet_sorted_row_group_point_lookup; do
+              05024_parquet_sorted_row_group_point_lookup \
+              05043_parquet_shared_footer_pruning; do
             echo "=== $t ==="
             ./clickhouse-test --binary ../build/programs/clickhouse "$t"
           done
