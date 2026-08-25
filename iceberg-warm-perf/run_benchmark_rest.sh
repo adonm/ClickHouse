@@ -22,7 +22,7 @@ CONCURRENCY="${BENCH_CONCURRENCY:-1}"
 
 BINARY="$(realpath "$BINARY")"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WORK_DIR="$ROOT/tmp/iceberg_warm_perf_rest_server"
+WORK_DIR="${BENCH_SERVER_DIR:-$ROOT/tmp/iceberg_warm_perf_rest_server}"
 RESULT_DIR="$ROOT/tmp/iceberg_warm_perf_results/$RUN_NAME"
 SERVER_LOG="$ROOT/tmp/iceberg_warm_perf_rest_server.log"
 REST_PORT=18787

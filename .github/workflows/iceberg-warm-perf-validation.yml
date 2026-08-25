@@ -142,6 +142,9 @@ jobs:
           fi
           echo "DATASET_ROOT=$DATASET_ROOT (tmpfs: ${TMPFS_DIR:-none})"
           echo "DATASET_ROOT=$DATASET_ROOT" >> "$GITHUB_ENV"
+          if [ -n "$TMPFS_DIR" ]; then
+            echo "BENCH_SERVER_DIR=$TMPFS_DIR/bench_server" >> "$GITHUB_ENV"
+          fi
       - name: Run comparison
         run: |
           CATALOG_URI="sqlite:///$DATASET_ROOT/iceberg_dataset/downloads/catalog.db"
