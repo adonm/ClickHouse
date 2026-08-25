@@ -55,8 +55,7 @@ jobs:
     env:
       CLICKHOUSE_PORT_TCP: 19001
       CLICKHOUSE_PORT_HTTP: 18124
-      CLICKHOUSE_TEST_SERVER_DIR: ${{ github.workspace }}/tmp/clickhouse_test_server
-      USER_FILES_PATH: ${{ github.workspace }}/tmp/clickhouse_test_server/user_files
+      CLICKHOUSE_USER_FILES: ${{ github.workspace }}/tmp/clickhouse_test_server/user_files
     steps:
       - uses: actions/checkout@v4
       - name: Download binary
@@ -65,17 +64,19 @@ jobs:
           name: clickhouse-binary
           path: build/programs
       - name: Run PR stateless tests
-        working-directory: tests
         run: |
-          chmod +x ../build/programs/clickhouse
-          rm -rf "$CLICKHOUSE_TEST_SERVER_DIR"
-          ../build/programs/clickhouse server --config-file ../iceberg-warm-perf/tests/server-config.xml > ../tmp/clickhouse_test_server.log 2>&1 &
+          chmod +x build/programs/clickhouse
+          rm -rf tmp/clickhouse_test_server
+          cp iceberg-warm-perf/tests/server-config.xml tmp/clickhouse_test_server-config.xml
+          sed -i "s|@USER_FILES@|${CLICKHOUSE_USER_FILES}|" tmp/clickhouse_test_server-config.xml
+          build/programs/clickhouse server --config-file tmp/clickhouse_test_server-config.xml > tmp/clickhouse_test_server.log 2>&1 &
           for _ in $(seq 1 120); do
-            ../build/programs/clickhouse client --port "$CLICKHOUSE_PORT_TCP" -q "SELECT 1" >/dev/null 2>&1 && break
+            build/programs/clickhouse client --port "$CLICKHOUSE_PORT_TCP" -q "SELECT 1" >/dev/null 2>&1 && break
             sleep 1
           done
-          ../build/programs/clickhouse client --port "$CLICKHOUSE_PORT_TCP" -q "SELECT 1" >/dev/null
+          build/programs/clickhouse client --port "$CLICKHOUSE_PORT_TCP" -q "SELECT 1" >/dev/null
           set -e
+          cd tests
           for t in \
               04500_datalake_catalog_cache \
               04501_iceberg_manifest_prune_cache \
