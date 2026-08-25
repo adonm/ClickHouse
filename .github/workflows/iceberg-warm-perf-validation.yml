@@ -1,0 +1,116 @@
+# Fork-only CI for the iceberg warm-performance validation branch
+# (adonm/iceberg-warm-perf-validation). Not intended for upstream.
+#
+# Builds the branch, runs the stateless tests added by PRs #115873-#115878,
+# and (on workflow_dispatch with run_perf=true) executes the benchmark
+# harness in iceberg-warm-perf/.
+#
+# GitHub-hosted runners are small (4 vCPU / 16 GB / ~14 GB disk), so this
+# uses a Release build with ccache and only the `clickhouse` target.
+# Perf numbers from shared runners are noisy - use them for gross sanity
+# only and re-measure on a dedicated machine.
+
+name: Iceberg warm-perf validation
+
+on:
+  push:
+    branches:
+      - adonm/iceberg-warm-perf-validation
+  workflow_dispatch:
+    inputs:
+      run_perf:
+        description: 'Run the benchmark harness after the tests (needs dataset; optional AWS creds via secrets)'
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: iceberg-warm-perf
+      - name: Configure
+        run: |
+          mkdir -p build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=OFF
+      - name: Build clickhouse
+        run: cd build && ninja clickhouse
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: clickhouse-binary
+          path: build/programs/clickhouse
+          retention-days: 3
+
+  stateless:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: clickhouse-binary
+          path: build/programs
+      - name: Run PR stateless tests
+        working-directory: tests
+        run: |
+          chmod +x ../build/programs/clickhouse
+          set -e
+          for t in \
+              04500_datalake_catalog_cache \
+              04501_iceberg_manifest_prune_cache \
+              05024_parquet_sorted_row_group_point_lookup \
+              05025_iceberg_object_metadata_cache; do
+            echo "=== $t ==="
+            ./clickhouse-test --binary ../build/programs/clickhouse "queries/0_stateless/$t"
+          done
+
+  perf:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_perf
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.ICEBERG_BENCH_AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.ICEBERG_BENCH_AWS_SECRET_ACCESS_KEY }}
+      S3_ENDPOINT: ${{ vars.S3_ENDPOINT }}
+      ICEBERG_TABLE_LOCATION: ${{ vars.ICEBERG_TABLE_LOCATION }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: clickhouse-binary
+          path: build/programs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dataset tooling
+        run: pip install "pyiceberg[sql-sqlite,s3fs]" pyarrow
+      - name: Build dataset
+        run: |
+          LOCATION="${ICEBERG_TABLE_LOCATION:-${{ github.workspace }}/tmp/iceberg_dataset/nyc_taxi}"
+          python3 iceberg-warm-perf/build_dataset.py \
+            --location "$LOCATION" \
+            --months 2025-01
+          echo "LOCATION=$LOCATION" >> "$GITHUB_ENV"
+      - name: Run benchmark
+        run: |
+          chmod +x build/programs/clickhouse
+          iceberg-warm-perf/run_benchmark.sh build/programs/clickhouse "$LOCATION" ci-run
+      - name: Report
+        run: python3 iceberg-warm-perf/report.py tmp/iceberg_warm_perf_results/ci-run
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-results
+          path: tmp/iceberg_warm_perf_results/ci-run
+          retention-days: 14
