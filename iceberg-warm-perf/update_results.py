@@ -42,7 +42,10 @@ def section(label: str, run: dict) -> str:
         )
     if run.get("stress") is not None:
         lines.append("")
-        lines.append(f"Stress (point lookup, sustained): {run['stress']:.2f} QPS")
+        lines.append(
+            f"Stress (point lookup, sustained): {run['stress']:.2f} QPS"
+            + ("" if run.get("stress_failures") is None else f", {run['stress_failures']} failed queries")
+        )
     lines.append("")
     return "\n".join(lines)
 

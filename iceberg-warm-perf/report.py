@@ -57,6 +57,12 @@ def load_run(result_dir: Path) -> dict:
         m = QPS_RE.search(stress_path.read_text())
         if m:
             run["stress"] = float(m.group(1))
+    failures_path = result_dir / "stress_failures.txt"
+    if failures_path.exists():
+        try:
+            run["stress_failures"] = int(failures_path.read_text().strip())
+        except ValueError:
+            pass
     return run
 
 
@@ -109,7 +115,11 @@ def print_run(label: str, run: dict) -> None:
                 print("| " + name + " | " + " | ".join(str(events.get(e, 0)) for e in interesting) + " |")
             print()
     if run["stress"] is not None:
-        print(f"Stress (point lookup, sustained): {run['stress']:.2f} QPS")
+        failures = run.get("stress_failures")
+        print(
+            f"Stress (point lookup, sustained): {run['stress']:.2f} QPS"
+            + ("" if failures is None else f", {failures} failed queries")
+        )
         print()
 
 
@@ -145,7 +155,10 @@ def main() -> None:
             )
         print()
         if before.get("stress") is not None and after.get("stress") is not None:
-            print(f"| stress (sustained point lookup) | - | - | - | {before['stress']:.2f} | {after['stress']:.2f} |")
+            line = f"| stress (sustained point lookup) | - | - | - | {before['stress']:.2f} | {after['stress']:.2f} |"
+            if before.get("stress_failures") is not None or after.get("stress_failures") is not None:
+                line += f" (failed queries: {before.get('stress_failures', 0)} vs {after.get('stress_failures', 0)})"
+            print(line)
         print()
         print("| Event | before | after |")
         print("|---|---|---|")

@@ -151,12 +151,17 @@ for i in "${!QUERIES[@]}"; do
 done
 
 # Optional saturation stress: fixed-duration run at high concurrency.
+# Failed queries are a first-class metric here (master can time out on the
+# per-query catalog traffic), so the run never aborts the job.
 if [ -n "${STRESS_TIMELIMIT:-}" ]; then
     echo "stress: ${STRESS_CONCURRENCY:-128} connections for ${STRESS_TIMELIMIT}s (point lookup)"
     "$BINARY" benchmark \
         --host 127.0.0.1 --port "$TCP_PORT" \
         --concurrency "${STRESS_CONCURRENCY:-128}" --timelimit "$STRESS_TIMELIMIT" \
-        <<< "${QUERIES[0]}" 2> "$RESULT_DIR/stress.txt"
+        <<< "${QUERIES[0]}" 2> "$RESULT_DIR/stress.txt" || true
+    FAILURES="$(grep -c "Code: " "$RESULT_DIR/stress.txt" || true)"
+    echo "$FAILURES" > "$RESULT_DIR/stress_failures.txt"
+    echo "stress failures: $FAILURES"
 fi
 
 "$BINARY" client --port "$TCP_PORT" --query "SYSTEM FLUSH LOGS" >/dev/null

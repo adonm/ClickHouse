@@ -113,7 +113,15 @@ class Handler(BaseHTTPRequestHandler):
         print(f"[rest-catalog] {self.address_string()} {fmt % args}", flush=True)
 
 
+class Server(ThreadingHTTPServer):
+    daemon_threads = True
+    # Master re-resolves the catalog per query, so the stress phase can open
+    # hundreds of connections per second; the default backlog of 5 would
+    # overflow its accept queue and fail queries with connect timeouts.
+    request_queue_size = 1024
+
+
 if __name__ == "__main__":
-    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    server = Server(("127.0.0.1", PORT), Handler)
     print(f"[rest-catalog] serving {CATALOG_URI} on 127.0.0.1:{PORT}", flush=True)
     server.serve_forever()
