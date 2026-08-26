@@ -90,6 +90,9 @@ jobs:
     env:
       TZ: Etc/UTC
       PYTHON: python3
+      BENCH_ITERATIONS: 50
+      STRESS_TIMELIMIT: 60
+      STRESS_CONCURRENCY: 128
     steps:
       - uses: actions/checkout@v4
       - name: Download validation binary
@@ -164,6 +167,7 @@ jobs:
             python3 iceberg-warm-perf/report.py --compare \
               "tmp/iceberg_warm_perf_results/before-$C" "tmp/iceberg_warm_perf_results/after-$C"
           done
+          python3 iceberg-warm-perf/update_results.py --all tmp/iceberg_warm_perf_results
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
@@ -172,4 +176,5 @@ jobs:
           path: |
             tmp/iceberg_warm_perf_results
             tmp/iceberg_warm_perf_rest_catalog.log
+            iceberg-warm-perf/RESULTS.md
           retention-days: 14
