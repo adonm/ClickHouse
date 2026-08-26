@@ -29,7 +29,6 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <mutex>
-#include <list>
 #include <lz4.h>
 #include <arrow/util/crc32.h>
 
@@ -53,94 +52,10 @@ namespace ProfileEvents
     extern const Event ParquetColumnsFilterExpression;
     extern const Event ParquetReadPages;
     extern const Event ParquetPrunedPages;
-    extern const Event ParquetRowGroupMinMaxPredicateChecks;
-    extern const Event ParquetOrderedRowGroupIndexCacheHits;
-    extern const Event ParquetOrderedRowGroupIndexCacheMisses;
 }
 
 namespace DB::Parquet
 {
-
-namespace
-{
-enum class OrderedRowGroupDirection : UInt8
-{
-    Unknown,
-    Ascending,
-    Descending,
-};
-
-struct OrderedRowGroupBound
-{
-    size_t row_group_idx;
-    Range range;
-};
-
-struct OrderedRowGroupIndex
-{
-    bool proven = false;
-    OrderedRowGroupDirection direction = OrderedRowGroupDirection::Unknown;
-    std::vector<OrderedRowGroupBound> bounds;
-};
-
-class OrderedRowGroupIndexCache
-{
-public:
-    std::shared_ptr<const OrderedRowGroupIndex> get(const String & key)
-    {
-        std::lock_guard lock(mutex);
-        auto it = entries.find(key);
-        if (it == entries.end())
-            return {};
-        lru.splice(lru.begin(), lru, it->second.lru_position);
-        return it->second.index;
-    }
-
-    std::shared_ptr<const OrderedRowGroupIndex> set(
-        const String & key, std::shared_ptr<const OrderedRowGroupIndex> index)
-    {
-        std::lock_guard lock(mutex);
-        if (auto it = entries.find(key); it != entries.end())
-            return it->second.index;
-
-        const size_t weight = 128 + index->bounds.size() * 128;
-        if (weight > max_size_bytes)
-            return index;
-        while (!lru.empty() && size_bytes + weight > max_size_bytes)
-        {
-            const String & victim = lru.back();
-            auto victim_it = entries.find(victim);
-            size_bytes -= victim_it->second.weight;
-            entries.erase(victim_it);
-            lru.pop_back();
-        }
-        lru.push_front(key);
-        entries.emplace(key, Entry{index, weight, lru.begin()});
-        size_bytes += weight;
-        return index;
-    }
-
-private:
-    struct Entry
-    {
-        std::shared_ptr<const OrderedRowGroupIndex> index;
-        size_t weight;
-        std::list<String>::iterator lru_position;
-    };
-
-    static constexpr size_t max_size_bytes = 64 * 1024 * 1024;
-    std::mutex mutex;
-    std::list<String> lru;
-    std::unordered_map<String, Entry> entries;
-    size_t size_bytes = 0;
-};
-
-OrderedRowGroupIndexCache & getOrderedRowGroupIndexCache()
-{
-    static OrderedRowGroupIndexCache cache;
-    return cache;
-}
-}
 
 /// Thrift deserialization can store an out-of-range value into an unscoped enum field when the
 /// input file is malformed. Loading such an enum directly is undefined behavior (caught by
@@ -295,14 +210,11 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
     }
 }
 
-void Reader::init(
-    const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_,
-    std::optional<String> row_group_index_cache_key_)
+void Reader::init(const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_)
 {
     options = options_;
     sample_block = &sample_block_;
     format_filter_info = format_filter_info_;
-    row_group_index_cache_key = std::move(row_group_index_cache_key_);
 }
 
 parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
@@ -446,201 +358,6 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
             throw;
         }
     }
-}
-
-std::vector<Reader::PointProbe> Reader::findPointProbes() const
-{
-    std::vector<PointProbe> probes;
-    if (!format_filter_info->key_condition)
-        return probes;
-
-    std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> point_conditions;
-    format_filter_info->key_condition->extractSingleColumnConditions(point_conditions, nullptr);
-    for (const auto & [key_idx, condition] : point_conditions)
-    {
-        Ranges ranges;
-        if (!condition->extractPlainRanges(ranges))
-            ranges = condition->extractBounds();
-        if (ranges.size() != 1)
-            continue;
-
-        const Range & range = ranges.front();
-        if (!range.left_included || !range.right_included
-            || !range.fullBounded() || range.left.isNull() || range.right.isNull()
-            || !Range::equals(range.left, range.right)
-            || key_idx >= sample_block_to_output_columns_idx.size())
-            continue;
-
-        const auto & output_idx = sample_block_to_output_columns_idx[key_idx];
-        if (!output_idx.has_value())
-            continue;
-        const OutputColumnInfo & output_info = output_columns[*output_idx];
-        if (output_info.is_missing_column || !output_info.is_primitive
-            || output_info.primitive_end != output_info.primitive_start + 1)
-            continue;
-
-        const size_t primitive_idx = output_info.primitive_start;
-        const PrimitiveColumnInfo & primitive = primitive_columns[primitive_idx];
-        if (primitive.idx_in_output_block != key_idx || !primitive.decoder.allow_stats)
-            continue;
-
-        probes.push_back(PointProbe{
-            .key_idx = key_idx,
-            .primitive_idx = primitive_idx,
-            .point = static_cast<const Field &>(range.left)});
-    }
-    return probes;
-}
-
-bool Reader::getFiniteRowGroupRange(
-    const parq::RowGroup & meta, const PrimitiveColumnInfo & column_info, Range & range) const
-{
-    const auto & column_meta = meta.columns.at(column_info.column_idx).meta_data;
-    if (!column_meta.__isset.statistics)
-        return false;
-
-    const IDataType & output_block_type = *extended_sample_block_data_types.at(column_info.idx_in_output_block);
-    bool nullable = column_info.levels.back().def > 0;
-    bool always_null = column_meta.statistics.__isset.null_count
-        && column_meta.statistics.null_count == column_meta.num_values;
-    bool can_be_null = !column_meta.statistics.__isset.null_count
-        || column_meta.statistics.null_count != 0;
-    bool null_as_default = options.format.null_as_default && !column_info.output_nullable;
-
-    if (nullable && always_null)
-    {
-        if (null_as_default)
-            range.right = range.left = output_block_type.getDefault();
-        else
-            range.right = range.left;
-    }
-    else
-    {
-        if (!column_meta.statistics.__isset.min_value || !column_meta.statistics.__isset.max_value)
-            return false;
-        column_info.decoder.decodeField(
-            column_meta.statistics.min_value, /*is_max=*/ false,
-            *column_info.decoded_type, output_block_type, range.left);
-        column_info.decoder.decodeField(
-            column_meta.statistics.max_value, /*is_max=*/ true,
-            *column_info.decoded_type, output_block_type, range.right);
-        adjustRangeFromIndexIfNeeded(range, column_info, can_be_null);
-    }
-
-    return range.fullBounded() && !range.left.isNull() && !range.right.isNull();
-}
-
-Reader::OrderedRowGroupLookup Reader::findOrderedRowGroupForPoint(const PointProbe & probe) const
-{
-    const PrimitiveColumnInfo & column_info = primitive_columns[probe.primitive_idx];
-    String cache_key;
-    std::shared_ptr<const OrderedRowGroupIndex> index;
-    if (row_group_index_cache_key)
-    {
-        cache_key = fmt::format(
-            "{}#column={}:{}#decoded={}#output={}#null_default={}#output_nullable={}",
-            *row_group_index_cache_key,
-            column_info.column_idx,
-            column_info.schema_idx,
-            column_info.decoded_type->getName(),
-            extended_sample_block_data_types.at(column_info.idx_in_output_block)->getName(),
-            options.format.null_as_default,
-            column_info.output_nullable);
-        index = getOrderedRowGroupIndexCache().get(cache_key);
-        if (index)
-            ProfileEvents::increment(ProfileEvents::ParquetOrderedRowGroupIndexCacheHits);
-        else
-            ProfileEvents::increment(ProfileEvents::ParquetOrderedRowGroupIndexCacheMisses);
-    }
-
-    if (!index)
-    {
-        const auto & parquet_metadata = getFileMetadata();
-        auto built = std::make_shared<OrderedRowGroupIndex>();
-        built->bounds.reserve(parquet_metadata.row_groups.size());
-        for (size_t row_group_idx = 0; row_group_idx < parquet_metadata.row_groups.size(); ++row_group_idx)
-        {
-            const auto & meta = parquet_metadata.row_groups[row_group_idx];
-            if (meta.num_rows < 0 || meta.columns.size() != total_primitive_columns_in_file)
-                break;
-            if (meta.num_rows == 0)
-                continue;
-
-            Range range = Range::createWholeUniverse();
-            try
-            {
-                if (!getFiniteRowGroupRange(meta, column_info, range))
-                    break;
-            }
-            catch (Exception & e)
-            {
-                e.addMessage(
-                    "in column chunk statistics for column '{}'; use input_format_parquet_filter_push_down=0 to ignore",
-                    column_info.name);
-                throw;
-            }
-
-            if (!built->bounds.empty())
-            {
-                const Range & previous = built->bounds.back().range;
-                const bool ascending = Range::less(previous.right, range.left);
-                const bool descending = Range::less(range.right, previous.left);
-                if (ascending == descending)
-                    break;
-                const auto pair_direction = ascending
-                    ? OrderedRowGroupDirection::Ascending
-                    : OrderedRowGroupDirection::Descending;
-                if (built->direction == OrderedRowGroupDirection::Unknown)
-                    built->direction = pair_direction;
-                else if (built->direction != pair_direction)
-                    break;
-            }
-            built->bounds.push_back(OrderedRowGroupBound{row_group_idx, std::move(range)});
-        }
-        built->proven = built->bounds.size()
-            == static_cast<size_t>(std::count_if(parquet_metadata.row_groups.begin(), parquet_metadata.row_groups.end(),
-                [](const auto & row_group) { return row_group.num_rows != 0; }));
-        index = cache_key.empty()
-            ? std::shared_ptr<const OrderedRowGroupIndex>(std::move(built))
-            : getOrderedRowGroupIndexCache().set(cache_key, std::move(built));
-    }
-
-    if (!index->proven)
-        return {};
-
-    OrderedRowGroupLookup result{.proven = true, .candidate_row_group = std::nullopt};
-    size_t left = 0;
-    size_t right = index->bounds.size();
-    while (left < right)
-    {
-        const size_t middle = left + (right - left) / 2;
-        const Range & range = index->bounds[middle].range;
-        if (index->direction != OrderedRowGroupDirection::Descending)
-        {
-            if (Range::less(range.right, probe.point))
-                left = middle + 1;
-            else if (Range::less(probe.point, range.left))
-                right = middle;
-            else
-            {
-                result.candidate_row_group = index->bounds[middle].row_group_idx;
-                break;
-            }
-        }
-        else
-        {
-            if (Range::less(range.right, probe.point))
-                right = middle;
-            else if (Range::less(probe.point, range.left))
-                left = middle + 1;
-            else
-            {
-                result.candidate_row_group = index->bounds[middle].row_group_idx;
-                break;
-            }
-        }
-    }
-    return result;
 }
 
 bool Reader::spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spatial_key_condition_idx) const
@@ -981,17 +698,6 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     }
 
     /// Populate row_groups. Skip row groups based on column chunk min/max statistics.
-    OrderedRowGroupLookup ordered_lookup;
-    if (options.format.parquet.filter_push_down && format_filter_info->key_condition)
-    {
-        for (const auto & probe : findPointProbes())
-        {
-            ordered_lookup = findOrderedRowGroupForPoint(probe);
-            if (ordered_lookup.proven)
-                break;
-        }
-    }
-
     size_t total_rows = 0;
     for (size_t row_group_idx = 0; row_group_idx < parquet_metadata.row_groups.size(); ++row_group_idx)
     {
@@ -1004,9 +710,6 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has unexpected number of columns: {} != {}", row_group_idx, meta->columns.size(), total_primitive_columns_in_file);
 
         total_rows += size_t(meta->num_rows); // before potentially skipping the row group
-
-        if (ordered_lookup.proven && ordered_lookup.candidate_row_group != row_group_idx)
-            continue;
 
         /// Lazy materialization: skip row groups that contain none of the requested rows.
         std::pair<size_t, size_t> requested_rows_slice {0, 0};
@@ -1033,7 +736,6 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
 
         if (options.format.parquet.filter_push_down && format_filter_info->key_condition)
         {
-            ProfileEvents::increment(ProfileEvents::ParquetRowGroupMinMaxPredicateChecks);
             if (!format_filter_info->key_condition->checkInHyperrectangle(
                     hyperrectangle, extended_sample_block_data_types).can_be_true)
                 continue;
@@ -1174,6 +876,8 @@ static parquet::ColumnDescriptor makeColumnDescriptor(const parq::FileMetaData &
 
 void Reader::prepareBloomFilterCondition()
 {
+    const auto & parquet_metadata = getFileMetadata();
+
     /// Index in output block -> arrow column info.
     std::vector<std::optional<std::pair</*primitive_idx*/ size_t, parquet::ColumnDescriptor>>>
         bf_eligible_columns(extended_sample_block.columns());
@@ -1215,7 +919,7 @@ void Reader::prepareBloomFilterCondition()
         if (!any_row_group_eligible)
             continue;
 
-        parquet::ColumnDescriptor desc = makeColumnDescriptor(getFileMetadata(), column_info);
+        parquet::ColumnDescriptor desc = makeColumnDescriptor(parquet_metadata, column_info);
         bf_eligible_columns[column_info.idx_in_output_block].emplace(primitive_idx, std::move(desc));
         dict_filter_eligible_columns[column_info.idx_in_output_block] = any_row_group_dict_eligible;
         any_column_eligible_for_bf = true;
