@@ -30,6 +30,11 @@ REST_PORT=18787
 
 rm -rf "$WORK_DIR" "$RESULT_DIR"
 mkdir -p "$WORK_DIR" "$RESULT_DIR"
+for _ in 1 2 3; do
+    rm -rf "$WORK_DIR" 2>/dev/null && break
+    sleep 2
+done
+mkdir -p "$WORK_DIR"
 
 HTTP_PORT=18123
 TCP_PORT=19000
@@ -90,7 +95,7 @@ cat > "$WORK_DIR/config.xml" <<EOF
 EOF
 "$BINARY" server --config-file "$WORK_DIR/config.xml" &
 SERVER_PID=$!
-trap 'kill "$SERVER_PID" "$REST_PID" 2>/dev/null || true' EXIT
+trap 'kill "$SERVER_PID" "$REST_PID" 2>/dev/null || true; wait "$SERVER_PID" 2>/dev/null || true' EXIT
 
 for _ in $(seq 1 60); do
     if "$BINARY" client --port "$TCP_PORT" --query "SELECT 1" >/dev/null 2>&1; then
