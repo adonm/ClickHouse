@@ -49,17 +49,25 @@ For an S3-backed dataset, pass an `s3://` location and ambient AWS credentials
 
 ## Benchmark protocol
 
-The query set (see `run_benchmark.sh`) mirrors the PR validation:
+The query set (see `run_benchmark_rest.sh`) mirrors the PR validation:
 
 1. point lookup on the sort column (`tpep_pickup_datetime = '2025-01-15 12:34:56'`)
 2. partition-filtered scan (`WHERE tpep_pickup_datetime BETWEEN ...`)
 3. full `count()`
 
-Warm up once before measuring, then N=10 iterations at fixed clients. Report
-p50/p95, QPS, and the cache counters (`Iceberg*Cache*`, `DataLakeCatalog*`,
-`ParquetOrderedRowGroup*`, `ParquetRowGroupMinMaxPredicateChecks`) from
-`system.events`. Compare the validation branch against master with the same
-dataset and settings.
+Each query is warmed twice (all caches hot, page-fault noise gone), then
+measured with `clickhouse-benchmark` over `BENCH_ITERATIONS` (default 50)
+queries per connection at `BENCH_CONCURRENCY` (default 1). After the
+throughput runs, each query is executed once more under a known `query_id`
+and its cache/I/O counters are read back from `system.query_log`
+(`events_query_*.jsonl`), so every cache can be attributed per query. When
+`STRESS_TIMELIMIT` is set, a sustained saturation run of the point lookup
+at `STRESS_CONCURRENCY` (default 128) connections reports its QPS in
+`stress.txt` and as a "stress" row in `report.py`.
+
+Run the comparison twice (`before`/`after`) and report p50/p95, QPS, the
+per-query attribution table, and the stress row; compare master vs the
+validation branch with the same dataset and settings.
 
 ## Known integration fixes (cherry-pick into PRs)
 

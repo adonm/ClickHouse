@@ -95,20 +95,27 @@ DROP TABLE IF EXISTS default.taxi;
 CREATE TABLE default.taxi ENGINE = $ICEBERG_ENGINE($ICEBERG_ARGS);
 EOF
 
-echo "warm-up query"
-"$BINARY" client --port "$TCP_PORT" --query "SELECT count() FROM default.taxi" >/dev/null
-
 QUERIES=(
     "SELECT count() FROM default.taxi WHERE tpep_pickup_datetime = '2025-01-15 12:34:56'"
     "SELECT count() FROM default.taxi WHERE tpep_pickup_datetime BETWEEN '2025-01-01 00:00:00' AND '2025-01-07 23:59:59'"
     "SELECT count() FROM default.taxi"
 )
 
-echo "benchmarking (concurrency 1, 10 iterations per query)"
+echo "warm-up: run each query once so all caches are hot before measuring"
+for q in "${QUERIES[@]}"; do
+    "$BINARY" client --port "$TCP_PORT" --query "$q" >/dev/null
+done
+# A second pass removes first-pass page-fault and lazy-init noise.
+for q in "${QUERIES[@]}"; do
+    "$BINARY" client --port "$TCP_PORT" --query "$q" >/dev/null
+done
+
+ITERATIONS="${BENCH_ITERATIONS:-50}"
+echo "benchmarking (concurrency ${BENCH_CONCURRENCY:-1}, $ITERATIONS iterations per query)"
 for i in "${!QUERIES[@]}"; do
     "$BINARY" benchmark \
         --host 127.0.0.1 --port "$TCP_PORT" \
-        --concurrency 1 --iterations 10 \
+        --concurrency "${BENCH_CONCURRENCY:-1}" --iterations "$ITERATIONS" \
         <<< "${QUERIES[$i]}" 2> "$RESULT_DIR/query_$((i + 1)).txt"
 done
 

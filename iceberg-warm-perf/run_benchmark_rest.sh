@@ -19,6 +19,7 @@ LOCATION="${3:?usage: run_benchmark_rest.sh <clickhouse-binary> <catalog-uri> <t
 RUN_NAME="${4:-latest}"
 PYTHON="${PYTHON:-python3}"
 CONCURRENCY="${BENCH_CONCURRENCY:-1}"
+ITERATIONS="${BENCH_ITERATIONS:-50}"
 
 BINARY="$(realpath "$BINARY")"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -65,6 +66,10 @@ cat > "$WORK_DIR/config.xml" <<EOF
     <user_files_path>$USER_FILES</user_files_path>
     <listen_host>127.0.0.1</listen_host>
     <mark_cache_size>536870912</mark_cache_size>
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+    </query_log>
     <profiles>
         <default></default>
     </profiles>
@@ -107,22 +112,52 @@ CREATE DATABASE bench_catalog
              ;
 EOF
 
-echo "warm-up query"
-"$BINARY" client --port "$TCP_PORT" --query "SELECT count() FROM bench_catalog.\`nyc.taxis\`" >/dev/null
-
 QUERIES=(
     "SELECT count() FROM bench_catalog.\`nyc.taxis\` WHERE tpep_pickup_datetime = '2025-01-15 12:34:56'"
     "SELECT count() FROM bench_catalog.\`nyc.taxis\` WHERE tpep_pickup_datetime BETWEEN '2025-01-01 00:00:00' AND '2025-01-07 23:59:59'"
     "SELECT count() FROM bench_catalog.\`nyc.taxis\`"
 )
 
-echo "benchmarking (concurrency $CONCURRENCY, 10 iterations per query)"
+echo "warm-up: run each query once so all caches are hot before measuring"
+for q in "${QUERIES[@]}"; do
+    "$BINARY" client --port "$TCP_PORT" --query "$q" >/dev/null
+done
+# A second pass removes first-pass page-fault and lazy-init noise.
+for q in "${QUERIES[@]}"; do
+    "$BINARY" client --port "$TCP_PORT" --query "$q" >/dev/null
+done
+
+echo "benchmarking (concurrency $CONCURRENCY, $ITERATIONS iterations per query)"
 for i in "${!QUERIES[@]}"; do
     "$BINARY" benchmark \
         --host 127.0.0.1 --port "$TCP_PORT" \
-        --concurrency "$CONCURRENCY" --iterations 10 \
+        --concurrency "$CONCURRENCY" --iterations "$ITERATIONS" \
         <<< "${QUERIES[$i]}" 2> "$RESULT_DIR/query_$((i + 1)).txt"
 done
+
+# Per-query attribution: run each query once with a known query_id and read
+# its cache and I/O counters back from query_log.
+"$BINARY" client --port "$TCP_PORT" --query "SYSTEM FLUSH LOGS" >/dev/null
+for i in "${!QUERIES[@]}"; do
+    "$BINARY" client --port "$TCP_PORT" --query "${QUERIES[$i]}" --query_id="bench_events_$((i + 1))" >/dev/null
+done
+"$BINARY" client --port "$TCP_PORT" --query "SYSTEM FLUSH LOGS" >/dev/null
+for i in "${!QUERIES[@]}"; do
+    "$BINARY" client --port "$TCP_PORT" --query "
+        SELECT event, ProfileEvents[event] AS value FROM system.query_log
+        ARRAY JOIN mapKeys(ProfileEvents) AS event
+        WHERE query_id='bench_events_$((i + 1))' AND type='QueryFinish' AND current_database = currentDatabase()
+        FORMAT JSONEachRow" > "$RESULT_DIR/events_query_$((i + 1)).jsonl"
+done
+
+# Optional saturation stress: fixed-duration run at high concurrency.
+if [ -n "${STRESS_TIMELIMIT:-}" ]; then
+    echo "stress: ${STRESS_CONCURRENCY:-128} connections for ${STRESS_TIMELIMIT}s (point lookup)"
+    "$BINARY" benchmark \
+        --host 127.0.0.1 --port "$TCP_PORT" \
+        --concurrency "${STRESS_CONCURRENCY:-128}" --timelimit "$STRESS_TIMELIMIT" \
+        <<< "${QUERIES[0]}" 2> "$RESULT_DIR/stress.txt"
+fi
 
 "$BINARY" client --port "$TCP_PORT" --query "SYSTEM FLUSH LOGS" >/dev/null
 "$BINARY" client --port "$TCP_PORT" --query "

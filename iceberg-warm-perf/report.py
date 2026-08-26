@@ -25,7 +25,7 @@ PCT_RE = re.compile(r"^\s*([0-9.]+)%\s+([0-9.]+)\s*sec")
 
 
 def load_run(result_dir: Path) -> dict:
-    run = {"queries": {}, "events": {}}
+    run = {"queries": {}, "events": {}, "per_query_events": {}, "stress": None}
     for i, name in enumerate(QUERY_NAMES, start=1):
         path = result_dir / f"query_{i}.txt"
         if not path.exists():
@@ -40,11 +40,23 @@ def load_run(result_dir: Path) -> dict:
             if m:
                 stats["percentiles"][float(m.group(1))] = float(m.group(2))
         run["queries"][name] = stats
+        per_query_path = result_dir / f"events_query_{i}.jsonl"
+        if per_query_path.exists():
+            events = {}
+            for line in per_query_path.read_text().splitlines():
+                row = json.loads(line)
+                events[row["event"]] = events.get(row["event"], 0) + int(row["value"])
+            run["per_query_events"][name] = events
     events_path = result_dir / "events.jsonl"
     if events_path.exists():
         for line in events_path.read_text().splitlines():
             row = json.loads(line)
             run["events"][row["event"]] = row["value"]
+    stress_path = result_dir / "stress.txt"
+    if stress_path.exists():
+        m = QPS_RE.search(stress_path.read_text())
+        if m:
+            run["stress"] = float(m.group(1))
     return run
 
 
@@ -83,6 +95,22 @@ def print_run(label: str, run: dict) -> None:
         for event, value in sorted(run["events"].items()):
             print(f"| `{event}` | {value} |")
         print()
+    if run["per_query_events"]:
+        interesting = [
+            e
+            for e in sorted(set(run["events"]) | set().union(*(run["per_query_events"].values())))
+            if ("Cache" in e or "Pruned" in e or e in ("OSReadBytes", "DiskReadElapsedMicroseconds"))
+            and e in run["events"]
+        ]
+        if interesting:
+            print("| Query | " + " | ".join(f"`{e}`" for e in interesting) + " |")
+            print("|" + "---|" * (len(interesting) + 1))
+            for name, events in run["per_query_events"].items():
+                print("| " + name + " | " + " | ".join(str(events.get(e, 0)) for e in interesting) + " |")
+            print()
+    if run["stress"] is not None:
+        print(f"Stress (point lookup, sustained): {run['stress']:.2f} QPS")
+        print()
 
 
 def main() -> None:
@@ -115,6 +143,9 @@ def main() -> None:
                 f"| {b_qps if b_qps is None else f'{b_qps:.2f}'} "
                 f"| {a_qps if a_qps is None else f'{a_qps:.2f}'} |"
             )
+        print()
+        if before.get("stress") is not None and after.get("stress") is not None:
+            print(f"| stress (sustained point lookup) | - | - | - | {before['stress']:.2f} | {after['stress']:.2f} |")
         print()
         print("| Event | before | after |")
         print("|---|---|---|")
