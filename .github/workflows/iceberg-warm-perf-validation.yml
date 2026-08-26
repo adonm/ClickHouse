@@ -151,6 +151,11 @@ jobs:
           LOCATION="$DATASET_ROOT/iceberg_dataset/nyc_taxi/nyc/taxis"
           export CATALOG_URI
           export WAREHOUSE="$DATASET_ROOT/iceberg_dataset/nyc_taxi"
+          # The master nightly is a self-extracting binary; point its
+          # extraction temp dir at the ramdisk so the before-run does not
+          # pay disk writes for decompression.
+          mkdir -p /ramdisk/bench_tmp
+          export TMPDIR=/ramdisk/bench_tmp
           for C in 8 64; do
             echo "===== concurrency $C ====="
             BENCH_CONCURRENCY=$C iceberg-warm-perf/run_benchmark_rest.sh tmp/binaries/master/clickhouse "$CATALOG_URI" "$LOCATION" "before-$C"
