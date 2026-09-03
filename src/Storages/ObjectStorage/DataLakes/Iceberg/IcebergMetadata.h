@@ -236,6 +236,11 @@ private:
         Iceberg::TableStateSnapshot state;
         std::shared_ptr<const StorageInMemoryMetadata> metadata;
     };
+    /// Single-entry cache of derived `StorageInMemoryMetadata` (columns + sorting key), keyed by exact
+    /// `TableStateSnapshot` equality. A stale entry can never be returned: any snapshot change misses
+    /// and rebuilds, so there is nothing for `SYSTEM CLEAR ICEBERG METADATA CACHE` to invalidate here.
+    /// Uses the `std::atomic_load/store_explicit` free functions on `shared_ptr`, matching the
+    /// convention used elsewhere in the codebase (e.g. `PaimonMetadata`, `ZooKeeper`).
     mutable std::shared_ptr<const DerivedMetadataCacheEntry> derived_metadata_cache;
 };
 

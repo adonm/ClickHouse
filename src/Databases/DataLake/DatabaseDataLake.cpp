@@ -796,6 +796,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         auto cache = getOrCreateCatalogCache(settings);
         if (auto cached = cache->get(catalog_cache_key))
         {
+            /// TTL check and removal are not atomic: two threads may both rebuild after a stale
+            /// miss (harmless duplication), and a stale entry is dropped rather than returned.
             auto age_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now() - cached->cached_at).count();
             if (static_cast<UInt64>(age_ms) <= catalog_staleness_ms)
@@ -935,6 +937,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     /// When the storage will be cached for reuse across queries, build it on a
     /// global-context copy: the query context holds query-scoped state (client
     /// info, temporary data) that must not be retained by a long-lived storage.
+    /// This is safe because table credentials come from database settings and the catalog
+    /// (database-level), not from per-user query state.
     ContextMutablePtr context_copy = Context::createCopy(
         use_catalog_cache ? Context::getGlobalContextInstance() : context_);
     Settings settings_copy = context_copy->getSettingsCopy();
@@ -1433,8 +1437,9 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
         database_engine_definition = new_engine_definition;
     }
 #if USE_AVRO
-    // Catalog cache depends on staleness/max_entries and on the catalog location (warehouse/url).
-    // Any ALTER that touches those settings must invalidate it.
+    /// The catalog cache depends on staleness/max_entries and on the catalog location
+    /// (warehouse/url). Clearing on any `ALTER DATABASE` over-invalidates on unrelated setting
+    /// changes, which is intentional: correctness first, the cache rebuilds on the next query.
     {
         std::lock_guard lock(catalog_cache_mutex);
         if (catalog_cache)

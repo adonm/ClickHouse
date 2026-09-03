@@ -358,7 +358,8 @@ String ManifestFilesPruner::partitionFilterHash() const
         {
             case KeyCondition::RPNElement::FUNCTION_AND:
             {
-                chassert(simplified.size() >= 2);
+                if (simplified.size() < 2)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Malformed partition `KeyCondition` RPN: `AND` with {} operands", simplified.size());
                 auto rhs = std::move(simplified.back());
                 simplified.pop_back();
                 auto lhs = std::move(simplified.back());
@@ -382,7 +383,8 @@ String ManifestFilesPruner::partitionFilterHash() const
             }
             case KeyCondition::RPNElement::FUNCTION_OR:
             {
-                chassert(simplified.size() >= 2);
+                if (simplified.size() < 2)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Malformed partition `KeyCondition` RPN: `OR` with {} operands", simplified.size());
                 auto rhs = std::move(simplified.back());
                 simplified.pop_back();
                 auto lhs = std::move(simplified.back());
@@ -400,7 +402,8 @@ String ManifestFilesPruner::partitionFilterHash() const
             }
             case KeyCondition::RPNElement::FUNCTION_NOT:
             {
-                chassert(!simplified.empty());
+                if (simplified.empty())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Malformed partition `KeyCondition` RPN: `NOT` with no operand");
                 /// NOT UNKNOWN is UNKNOWN; otherwise apply the NOT.
                 if (!top_is_unknown())
                     simplified.push_back(element);
