@@ -40,13 +40,40 @@ BASE_LOCATION = os.getenv("BASE_LOCATION", f"file://{WAREHOUSE}")
 REWRITE_SRC = os.getenv("PATH_REWRITE_SRC")
 REWRITE_DST = os.getenv("PATH_REWRITE_DST")
 
+# S3-backed warehouses (e.g. the JDBC-bench MinIO fixture): metadata files
+# are fetched over S3 instead of local open(). Unset for file:// datasets.
+S3_ENDPOINT = os.getenv("S3_ENDPOINT")
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY")
+S3_SECRET_KEY = os.getenv("S3_SECRET_KEY")
+
 
 def rewrite_path(path: str) -> str:
     if REWRITE_SRC and REWRITE_DST and path.startswith(REWRITE_SRC):
         return REWRITE_DST + path[len(REWRITE_SRC):]
     return path
 
-catalog = load_catalog(CATALOG_NAME, type="sql", uri=CATALOG_URI, warehouse=WAREHOUSE)
+
+def read_metadata(path: str) -> dict:
+    """Load a metadata.json from a local path or (with S3_* set) S3."""
+    if path.startswith("s3://") and S3_ENDPOINT:
+        import s3fs
+
+        fs = s3fs.S3FileSystem(endpoint_url=S3_ENDPOINT, key=S3_ACCESS_KEY, secret=S3_SECRET_KEY)
+        with fs.open(path, "rb") as metadata_file:
+            return json.load(metadata_file)
+    with open(rewrite_path(path), encoding="utf-8") as metadata_file:
+        return json.load(metadata_file)
+
+catalog_properties = {"uri": CATALOG_URI, "warehouse": WAREHOUSE}
+if S3_ENDPOINT:
+    catalog_properties.update(
+        {
+            "s3.endpoint": S3_ENDPOINT,
+            "s3.access-key-id": S3_ACCESS_KEY or "",
+            "s3.secret-access-key": S3_SECRET_KEY or "",
+        }
+    )
+catalog = load_catalog(CATALOG_NAME, type="sql", **catalog_properties)
 TABLES = {
     "nyc": sorted(identifier[-1] for identifier in catalog.list_tables("nyc") if len(identifier) > 1)
 }
@@ -91,12 +118,20 @@ class Handler(BaseHTTPRequestHandler):
                 if name not in TABLES["nyc"]:
                     return {"error": {"type": "NoSuchTableException", "message": name}}, 404
                 table = catalog.load_table(f"nyc.{name}")
-                metadata_location = rewrite_path(table.metadata_location)
-                # Serve the on-disk metadata file: it uses the kebab-case
-                # field names ClickHouse's parser expects (PyIceberg's
-                # json() would emit snake_case).
-                with open(metadata_location, encoding="utf-8") as metadata_file:
-                    metadata = json.load(metadata_file)
+                raw_location = table.metadata_location
+                metadata = read_metadata(raw_location)
+                if raw_location.startswith("s3://"):
+                    # S3-backed table: locations are already S3 URLs that
+                    # ClickHouse resolves via its storage_endpoint setting.
+                    metadata_location = raw_location
+                    return {
+                        "metadata-location": metadata_location,
+                        "metadata": metadata,
+                    }, 200
+                metadata_location = rewrite_path(raw_location)
+                # The served metadata file uses the kebab-case field names
+                # ClickHouse's parser expects (PyIceberg's json() would emit
+                # snake_case).
                 # PyIceberg writes bare filesystem paths; ClickHouse's local
                 # storage requires a file:// scheme.
                 if "location" in metadata:

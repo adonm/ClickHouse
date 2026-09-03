@@ -1,0 +1,186 @@
+# Fork-only CI for the Iceberg JDBC catalog implementation.
+# Lives on adonm/iceberg-warm-perf-validation (with the other bench harness);
+# builds adonm/iceberg-jdbc-catalog, runs its stateless test, and benchmarks
+# catalog_type='jdbc' against catalog_type='rest' on the same binary and the
+# same public-dataset fixture (NYC TLC via build_dataset.py into MinIO +
+# standard SqlCatalog rows in Postgres). Not intended for upstream.
+#
+# GitHub-hosted runners are small, so like iceberg-warm-perf-validation.yml
+# this uses a Release build with only the `clickhouse` target on the
+# self-hosted `iceberg-warm-perf` runner. Perf numbers are for comparing the
+# two catalog legs on the same machine, not across machines.
+
+name: Iceberg JDBC catalog bench
+
+on:
+  workflow_dispatch:
+    inputs:
+      jdbc_ref:
+        description: Ref with the JDBC implementation to build
+        default: adonm/iceberg-jdbc-catalog
+        type: string
+      months:
+        description: Source months for the fixture dataset
+        default: '2025-01'
+        type: string
+      iterations:
+        description: clickhouse-benchmark iterations per query
+        default: '50'
+        type: string
+
+env:
+  PG_HOST: 127.0.0.1
+  PG_PORT: 5432
+  PG_DATABASE: benchci
+  PG_SCHEMA: public
+  PG_USER: postgres
+  PG_PASSWORD: benchpass
+  PG_CATALOG: iceberg_warm_perf
+  S3_ENDPOINT: http://127.0.0.1:9000
+  S3_ACCESS_KEY: minio
+  S3_SECRET_KEY: Miniopass123
+  S3_BUCKET: benchci
+  S3_LOCATION: s3://benchci/nyc_taxi
+
+jobs:
+  build:
+    runs-on: iceberg-warm-perf
+    timeout-minutes: 360
+    container:
+      image: clickhouse/binary-builder:latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.jdbc_ref }}
+          submodules: recursive
+      - name: Configure
+        run: |
+          mkdir -p build && cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=OFF
+      - name: Build clickhouse
+        run: cd build && ninja clickhouse
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: clickhouse-jdbc-binary
+          path: build/programs/clickhouse
+          retention-days: 3
+
+  stateless:
+    needs: build
+    runs-on: iceberg-warm-perf
+    timeout-minutes: 90
+    env:
+      TZ: Etc/UTC
+      CLICKHOUSE_PORT_TCP: 19003
+      CLICKHOUSE_PORT_HTTP: 18126
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.jdbc_ref }}
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: clickhouse-jdbc-binary
+          path: build/programs
+      - name: Run JDBC stateless test
+        run: |
+          chmod +x build/programs/clickhouse
+          cd tests
+          ./clickhouse-test --binary ../build/programs/clickhouse 05059_iceberg_jdbc_catalog
+
+  bench:
+    needs: build
+    runs-on: iceberg-warm-perf
+    timeout-minutes: 180
+    env:
+      TZ: Etc/UTC
+      PYTHON: python3
+      BENCH_ITERATIONS: ${{ inputs.iterations }}
+      STRESS_TIMELIMIT: 60
+      STRESS_CONCURRENCY: 128
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download JDBC binary
+        uses: actions/download-artifact@v4
+        with:
+          name: clickhouse-jdbc-binary
+          path: build/programs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dataset tooling
+        run: pip install "pyiceberg[s3fs]" pyarrow sqlalchemy "psycopg[binary]"
+      - name: Start Postgres and MinIO
+        run: |
+          docker rm -f jdbc-bench-pg jdbc-bench-minio 2>/dev/null || true
+          docker run -d --name jdbc-bench-pg -p "${PG_PORT}:5432" \
+            -e POSTGRES_USER="${PG_USER}" -e POSTGRES_PASSWORD="${PG_PASSWORD}" \
+            -e POSTGRES_DB="${PG_DATABASE}" postgres:17
+          docker run -d --name jdbc-bench-minio -p "9000:9000" \
+            -e MINIO_ROOT_USER="${S3_ACCESS_KEY}" -e MINIO_ROOT_PASSWORD="${S3_SECRET_KEY}" \
+            minio/minio:latest server /data
+          for _ in $(seq 1 60); do
+            docker exec jdbc-bench-pg pg_isready -U "${PG_USER}" >/dev/null 2>&1 \
+              && curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null 2>&1 && break
+            sleep 2
+          done
+          docker exec jdbc-bench-pg pg_isready -U "${PG_USER}"
+          curl -fsS http://127.0.0.1:9000/minio/health/live
+      - name: Build fixture dataset (if missing)
+        run: |
+          # The runner workspace persists between runs; the MinIO container
+          # does not, so re-upload when the bucket is empty.
+          EMPTY="$(python3 -c "
+          import s3fs
+          fs = s3fs.S3FileSystem(endpoint_url='${S3_ENDPOINT}', key='${S3_ACCESS_KEY}', secret='${S3_SECRET_KEY}')
+          if not fs.exists('s3://${S3_BUCKET}'):
+              fs.mkdir('s3://${S3_BUCKET}')
+          print('yes' if len(fs.glob('s3://${S3_BUCKET}/nyc_taxi/nyc/taxis/metadata/*')) == 0 else 'no')
+          ")"
+          if [ "$EMPTY" = "yes" ]; then
+            python3 iceberg-warm-perf/build_dataset.py \
+              --location "${S3_LOCATION}" \
+              --catalog-uri "postgresql+psycopg://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}" \
+              --endpoint "${S3_ENDPOINT}" --access-key "${S3_ACCESS_KEY}" --secret-key "${S3_SECRET_KEY}" \
+              --months "${{ inputs.months }}" \
+              --download-dir "${{ github.workspace }}/tmp/iceberg_dataset/downloads"
+          else
+            echo "reusing existing S3 fixture"
+          fi
+          chmod +x build/programs/clickhouse
+      - name: Run rest-vs-jdbc comparison
+        run: |
+          export CATALOG_URI="postgresql+psycopg://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}"
+          export WAREHOUSE="${S3_LOCATION}"
+          export BASE_LOCATION="s3://${S3_BUCKET}"
+          export S3_ACCESS_KEY S3_SECRET_KEY
+          export S3_ENDPOINT
+          export PG_HOST PG_PORT PG_DATABASE PG_SCHEMA PG_USER PG_PASSWORD PG_CATALOG
+          export CATALOG_STORAGE_SETTINGS="storage_endpoint='${S3_ENDPOINT}', aws_access_key_id='${S3_ACCESS_KEY}', aws_secret_access_key='${S3_SECRET_KEY}'"
+          export REST_WAREHOUSE="${PG_CATALOG}"
+          TABLE_LOCATION="${S3_LOCATION}/nyc/taxis"
+          for C in 8 64; do
+            echo "===== concurrency $C ====="
+            BENCH_CONCURRENCY=$C iceberg-warm-perf/run_benchmark_rest.sh \
+              build/programs/clickhouse "$CATALOG_URI" "$TABLE_LOCATION" "jdbc-rest-$C"
+            BENCH_CONCURRENCY=$C iceberg-warm-perf/run_benchmark_jdbc.sh \
+              build/programs/clickhouse "jdbc-direct-$C"
+            python3 iceberg-warm-perf/report.py --compare \
+              "tmp/iceberg_warm_perf_results/jdbc-rest-$C" "tmp/iceberg_warm_perf_results/jdbc-direct-$C"
+          done
+          python3 iceberg-warm-perf/update_results.py --all tmp/iceberg_warm_perf_results
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jdbc-bench-results
+          path: |
+            tmp/iceberg_warm_perf_results
+            tmp/iceberg_warm_perf_rest_server.log
+            tmp/iceberg_warm_perf_jdbc_server.log
+            iceberg-warm-perf/RESULTS.md
+          retention-days: 14
+      - name: Stop services
+        if: always()
+        run: docker rm -f jdbc-bench-pg jdbc-bench-minio 2>/dev/null || true

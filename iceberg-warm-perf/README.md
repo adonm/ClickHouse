@@ -69,6 +69,27 @@ Run the comparison twice (`before`/`after`) and report p50/p95, QPS, the
 per-query attribution table, and the stress row; compare master vs the
 validation branch with the same dataset and settings.
 
+## JDBC catalog leg (`catalog_type = 'jdbc'`)
+
+`run_benchmark_jdbc.sh` runs the same query set over a standard Iceberg
+JdbcCatalog in Postgres (table data on S3-compatible storage) and is compared
+against the REST leg on the same binary and fixture:
+
+- `rest_catalog_server.py` also serves S3-backed catalogs: set `S3_ENDPOINT`,
+  `S3_ACCESS_KEY`, `S3_SECRET_KEY` and a Postgres `CATALOG_URI`, and pass
+  `BASE_LOCATION=s3://<bucket>` plus
+  `CATALOG_STORAGE_SETTINGS="storage_endpoint='<endpoint>', ..."` to
+  `run_benchmark_rest.sh`.
+- Fixture: `build_dataset.py` with an `s3://` location and a Postgres
+  `--catalog-uri` writes both the warehouse and the standard
+  `iceberg_tables` rows (needs MinIO/Postgres running; create the bucket
+  first).
+- CI: `.github/workflows/iceberg-jdbc-bench.yml` (manual
+  `workflow_dispatch`) builds the `adonm/iceberg-jdbc-catalog` branch, runs
+  its stateless test, then benches `rest` vs `jdbc` at concurrencies 8 and
+  64. It lives on this branch so the implementation branch stays
+  upstream-clean.
+
 ## Known integration fixes (cherry-pick into PRs)
 
 When the PRs land in sequence, two cross-PR fixes made on this branch must be

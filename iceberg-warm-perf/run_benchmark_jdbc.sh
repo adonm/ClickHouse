@@ -1,32 +1,54 @@
 #!/usr/bin/env bash
-# REST-catalog-backed benchmark: starts the local REST catalog server and a
-# throwaway ClickHouse server, creates a DataLakeCatalog database over the
-# dataset, and runs the warm-perf query set with clickhouse-benchmark.
+# JDBC-catalog-backed benchmark: starts a throwaway ClickHouse server, creates
+# a DataLakeCatalog database with catalog_type='jdbc' over a standard
+# Iceberg SqlCatalog in Postgres (table data on S3-compatible storage), and
+# runs the same warm-perf query set as run_benchmark_rest.sh so the two legs
+# are directly comparable via report.py --compare.
 #
 # Usage:
-#   run_benchmark_rest.sh <clickhouse-binary> <catalog-uri> <table-location> [run-name]
+#   run_benchmark_jdbc.sh <clickhouse-binary> [run-name]
 #
-# <table-location> must be the Iceberg table root (e.g. .../nyc/taxis) whose
-# parent contains the whole warehouse; the server's user_files_path is set to
-# that parent so the file:// reads are allowed. PYTHON env selects the python
-# with pyiceberg installed (defaults to python3).
+# The fixture (Postgres catalog rows + S3 warehouse) must already exist; build
+# it with e.g.:
+#   python3 iceberg-warm-perf/build_dataset.py \
+#       --location s3://benchci/nyc_taxi \
+#       --catalog-uri "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/benchci" \
+#       --endpoint "$S3_ENDPOINT" --access-key "$S3_ACCESS_KEY" \
+#       --secret-key "$S3_SECRET_KEY" --months 2025-01 \
+#       --download-dir tmp/iceberg_dataset/downloads
+#
+# Env (no defaults except ports):
+#   PG_HOST PG_PORT PG_DATABASE PG_SCHEMA PG_USER PG_PASSWORD PG_CATALOG
+#       Postgres holding iceberg_tables; PG_CATALOG is the JdbcCatalog
+#       catalog_name and becomes the DataLakeCatalog `warehouse` setting.
+#   S3_ENDPOINT S3_ACCESS_KEY S3_SECRET_KEY
+#       S3-compatible storage holding the warehouse (also used as ClickHouse
+#       storage_endpoint + static credentials).
+#   PYTHON selects the python with psycopg installed (defaults to python3).
 
 set -euo pipefail
 
-BINARY="${1:?usage: run_benchmark_rest.sh <clickhouse-binary> <catalog-uri> <table-location> [run-name]}"
-CATALOG_URI="${2:?usage: run_benchmark_rest.sh <clickhouse-binary> <catalog-uri> <table-location> [run-name]}"
-LOCATION="${3:?usage: run_benchmark_rest.sh <clickhouse-binary> <catalog-uri> <table-location> [run-name]}"
-RUN_NAME="${4:-latest}"
-PYTHON="${PYTHON:-python3}"
+BINARY="${1:?usage: run_benchmark_jdbc.sh <clickhouse-binary> [run-name]}"
+RUN_NAME="${2:-latest}"
 CONCURRENCY="${BENCH_CONCURRENCY:-1}"
 ITERATIONS="${BENCH_ITERATIONS:-50}"
 
+: "${PG_HOST:?set PG_HOST}"
+: "${PG_DATABASE:?set PG_DATABASE}"
+: "${PG_USER:?set PG_USER}"
+: "${PG_CATALOG:?set PG_CATALOG}"
+: "${S3_ENDPOINT:?set S3_ENDPOINT}"
+: "${S3_ACCESS_KEY:?set S3_ACCESS_KEY}"
+: "${S3_SECRET_KEY:?set S3_SECRET_KEY}"
+PG_PORT="${PG_PORT:-5432}"
+PG_SCHEMA="${PG_SCHEMA:-public}"
+PG_PASSWORD="${PG_PASSWORD:-}"
+
 BINARY="$(realpath "$BINARY")"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WORK_DIR="${BENCH_SERVER_DIR:-$ROOT/tmp/iceberg_warm_perf_rest_server}"
+WORK_DIR="${BENCH_SERVER_DIR:-$ROOT/tmp/iceberg_warm_perf_jdbc_server}"
 RESULT_DIR="$ROOT/tmp/iceberg_warm_perf_results/$RUN_NAME"
-SERVER_LOG="$ROOT/tmp/iceberg_warm_perf_rest_server.log"
-REST_PORT=18787
+SERVER_LOG="$ROOT/tmp/iceberg_warm_perf_jdbc_server.log"
 
 rm -rf "$WORK_DIR" "$RESULT_DIR"
 mkdir -p "$WORK_DIR" "$RESULT_DIR"
@@ -36,31 +58,26 @@ for _ in 1 2 3; do
 done
 mkdir -p "$WORK_DIR"
 
-HTTP_PORT=18123
-TCP_PORT=19000
-if [[ "$LOCATION" == s3://* ]]; then
-    # S3-backed table (e.g. the JDBC-comparison fixture): no local user files.
-    USER_FILES="$WORK_DIR/user_files"
-    mkdir -p "$USER_FILES"
-else
-    USER_FILES="$(dirname "$(realpath "$LOCATION")")"
+HTTP_PORT=18125
+TCP_PORT=19002
+
+echo "checking Postgres fixture ($PG_HOST:$PG_PORT/$PG_DATABASE catalog '$PG_CATALOG')"
+TABLE_COUNT="$("$PYTHON" - "$PG_HOST" "$PG_PORT" "$PG_DATABASE" "$PG_SCHEMA" "$PG_USER" "$PG_PASSWORD" "$PG_CATALOG" <<'EOF'
+import sys
+import psycopg
+host, port, db, schema, user, password, catalog = sys.argv[1:8]
+quoted = '"' + schema.replace('"', '""') + '"."iceberg_tables"'
+with psycopg.connect(host=host, port=port, dbname=db, user=user, password=password or None) as conn:
+    with conn.cursor() as cur:
+        cur.execute(f"SELECT count(*) FROM {quoted} WHERE catalog_name = %s", (catalog,))
+        print(cur.fetchone()[0])
+EOF
+)"
+if [ "${TABLE_COUNT:-0}" -lt 1 ]; then
+    echo "no tables for catalog '$PG_CATALOG' in $PG_SCHEMA.iceberg_tables; build the fixture first" >&2
+    exit 1
 fi
-
-WAREHOUSE="$(dirname "$USER_FILES")"
-export CATALOG_URI
-export WAREHOUSE
-export PATH_REWRITE_SRC="${PATH_REWRITE_SRC:-}"
-export PATH_REWRITE_DST="${PATH_REWRITE_DST:-}"
-PORT="$REST_PORT" "$PYTHON" "$ROOT/iceberg-warm-perf/rest_catalog_server.py" \
-    > "$ROOT/tmp/iceberg_warm_perf_rest_catalog.log" 2>&1 &
-REST_PID=$!
-trap 'kill "$REST_PID" 2>/dev/null || true' EXIT
-
-for _ in $(seq 1 30); do
-    curl -fsS "http://127.0.0.1:$REST_PORT/v1/config" >/dev/null 2>&1 && break
-    sleep 1
-done
-curl -fsS "http://127.0.0.1:$REST_PORT/v1/config" >/dev/null
+echo "fixture has $TABLE_COUNT table(s)"
 
 echo "starting server on http port $HTTP_PORT (log: $SERVER_LOG)"
 cat > "$WORK_DIR/config.xml" <<EOF
@@ -74,7 +91,7 @@ cat > "$WORK_DIR/config.xml" <<EOF
     <tcp_port>$TCP_PORT</tcp_port>
     <path>$WORK_DIR</path>
     <tmp_path>$WORK_DIR/tmp</tmp_path>
-    <user_files_path>$USER_FILES</user_files_path>
+    <user_files_path>$WORK_DIR/user_files</user_files_path>
     <listen_host>127.0.0.1</listen_host>
     <mark_cache_size>536870912</mark_cache_size>
     <query_log>
@@ -101,7 +118,7 @@ cat > "$WORK_DIR/config.xml" <<EOF
 EOF
 "$BINARY" server --config-file "$WORK_DIR/config.xml" &
 SERVER_PID=$!
-trap 'kill "$SERVER_PID" "$REST_PID" 2>/dev/null || true; wait "$SERVER_PID" 2>/dev/null || true' EXIT
+trap 'kill "$SERVER_PID" 2>/dev/null || true; wait "$SERVER_PID" 2>/dev/null || true' EXIT
 
 for _ in $(seq 1 60); do
     if "$BINARY" client --port "$TCP_PORT" --query "SELECT 1" >/dev/null 2>&1; then
@@ -112,18 +129,22 @@ done
 "$BINARY" client --port "$TCP_PORT" --query "SELECT 1" >/dev/null
 
 CATALOG_CACHE_SETTINGS="${CATALOG_CACHE_SETTINGS:-}"
-# Extra engine settings for non-file datasets, e.g.
-# CATALOG_STORAGE_SETTINGS="storage_endpoint='http://127.0.0.1:9000', aws_access_key_id='minio', aws_secret_access_key='...'"
-CATALOG_STORAGE_SETTINGS="${CATALOG_STORAGE_SETTINGS:-}"
-REST_WAREHOUSE="${REST_WAREHOUSE:-warm_perf}"
 "$BINARY" client --port "$TCP_PORT" --multiquery <<EOF
 SET allow_database_iceberg = 1;
 DROP DATABASE IF EXISTS bench_catalog;
 CREATE DATABASE bench_catalog
-    ENGINE = DataLakeCatalog('http://127.0.0.1:$REST_PORT/v1')
-    SETTINGS catalog_type='rest',
-             warehouse='$REST_WAREHOUSE',
-             vended_credentials=false${CATALOG_CACHE_SETTINGS:+, $CATALOG_CACHE_SETTINGS}${CATALOG_STORAGE_SETTINGS:+, $CATALOG_STORAGE_SETTINGS}
+    ENGINE = DataLakeCatalog
+    SETTINGS catalog_type='jdbc',
+             warehouse='$PG_CATALOG',
+             jdbc_host='$PG_HOST',
+             jdbc_port=$PG_PORT,
+             jdbc_database='$PG_DATABASE',
+             jdbc_schema='$PG_SCHEMA',
+             jdbc_user='$PG_USER',
+             jdbc_password='$PG_PASSWORD',
+             storage_endpoint='$S3_ENDPOINT',
+             aws_access_key_id='$S3_ACCESS_KEY',
+             aws_secret_access_key='$S3_SECRET_KEY'${CATALOG_CACHE_SETTINGS:+, $CATALOG_CACHE_SETTINGS}
              ;
 EOF
 
@@ -166,8 +187,6 @@ for i in "${!QUERIES[@]}"; do
 done
 
 # Optional saturation stress: fixed-duration run at high concurrency.
-# Failed queries are a first-class metric here (master can time out on the
-# per-query catalog traffic), so the run never aborts the job.
 if [ -n "${STRESS_TIMELIMIT:-}" ]; then
     echo "stress: ${STRESS_CONCURRENCY:-128} connections for ${STRESS_TIMELIMIT}s (point lookup)"
     "$BINARY" benchmark \
