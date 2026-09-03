@@ -97,6 +97,29 @@ jobs:
       - name: Run JDBC stateless test
         run: |
           chmod +x build/programs/clickhouse
+          # clickhouse-test needs a running server; start a throwaway one.
+          rm -rf tmp/clickhouse_test_server
+          mkdir -p tmp/clickhouse_test_server
+          cat > tmp/clickhouse_test_server-config.xml <<EOF
+          <clickhouse>
+              <logger><level>warning</level><console>1</console></logger>
+              <http_port>${CLICKHOUSE_PORT_HTTP}</http_port>
+              <tcp_port>${CLICKHOUSE_PORT_TCP}</tcp_port>
+              <listen_host>127.0.0.1</listen_host>
+              <path>tmp/clickhouse_test_server/</path>
+              <tmp_path>tmp/clickhouse_test_server/tmp/</tmp_path>
+              <user_files_path>tmp/clickhouse_test_server/</user_files_path>
+              <users><default><password></password><networks><ip>::/0</ip></networks><profile>default</profile><quota>default</quota></default></users>
+              <profiles><default></default></profiles>
+              <quotas><default></default></quotas>
+          </clickhouse>
+          EOF
+          build/programs/clickhouse server --config-file tmp/clickhouse_test_server-config.xml > tmp/clickhouse_test_server.log 2>&1 &
+          for _ in $(seq 1 120); do
+            build/programs/clickhouse client --port "$CLICKHOUSE_PORT_TCP" -q "SELECT 1" >/dev/null 2>&1 && break
+            sleep 1
+          done
+          build/programs/clickhouse client --port "$CLICKHOUSE_PORT_TCP" -q "SELECT 1" >/dev/null
           cd tests
           ./clickhouse-test --binary ../build/programs/clickhouse 05059_iceberg_jdbc_catalog
 
