@@ -13,6 +13,15 @@
 name: Iceberg JDBC catalog bench
 
 on:
+  push:
+    branches:
+      - adonm/iceberg-warm-perf-validation
+    paths:
+      - iceberg-warm-perf/run_benchmark_jdbc.sh
+      - iceberg-warm-perf/run_benchmark_rest.sh
+      - iceberg-warm-perf/rest_catalog_server.py
+      - iceberg-warm-perf/build_dataset.py
+      - .github/workflows/iceberg-jdbc-bench.yml
   workflow_dispatch:
     inputs:
       jdbc_ref:
