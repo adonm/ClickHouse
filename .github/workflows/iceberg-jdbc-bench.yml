@@ -60,7 +60,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.jdbc_ref }}
+          # Push-triggered runs have no `inputs`; fall back to the defaults
+          # from the workflow_dispatch input definitions.
+          ref: ${{ inputs.jdbc_ref || 'adonm/iceberg-jdbc-catalog' }}
           submodules: recursive
       - name: Configure
         run: |
@@ -86,7 +88,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.jdbc_ref }}
+          ref: ${{ inputs.jdbc_ref || 'adonm/iceberg-jdbc-catalog' }}
       - name: Download binary
         uses: actions/download-artifact@v4
         with:
@@ -105,7 +107,7 @@ jobs:
     env:
       TZ: Etc/UTC
       PYTHON: python3
-      BENCH_ITERATIONS: ${{ inputs.iterations }}
+      BENCH_ITERATIONS: ${{ inputs.iterations || '50' }}
       STRESS_TIMELIMIT: 60
       STRESS_CONCURRENCY: 128
     steps:
@@ -152,7 +154,7 @@ jobs:
               --location "${S3_LOCATION}" \
               --catalog-uri "postgresql+psycopg://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}" \
               --endpoint "${S3_ENDPOINT}" --access-key "${S3_ACCESS_KEY}" --secret-key "${S3_SECRET_KEY}" \
-              --months "${{ inputs.months }}" \
+              --months "${{ inputs.months || '2025-01' }}" \
               --download-dir "${{ github.workspace }}/tmp/iceberg_dataset/downloads"
           else
             echo "reusing existing S3 fixture"
