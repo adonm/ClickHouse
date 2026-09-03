@@ -55,3 +55,51 @@ Stress (point lookup, sustained): 863.89 QPS, 0 failed queries
 | full count | 394.07 | 2.00 ms | 2.00 ms |
 
 Stress (point lookup, sustained): 1740.88 QPS, 0 failed queries
+## Comparison (concurrency 64)
+
+### Before (master)
+
+### before (2026-09-03 09:03 UTC, `ee3bde5d`)
+
+| Query | QPS | p50 | p95 |
+|---|---|---|---|
+| point lookup | 290.48 | 38.00 ms | 54.00 ms |
+| partition scan | 243.68 | 61.00 ms | 98.00 ms |
+| full count | 328.54 | 32.00 ms | 46.00 ms |
+
+Stress (point lookup, sustained): 816.43 QPS, 0 failed queries
+### After (validation)
+
+### after (2026-09-03 09:03 UTC, `ee3bde5d`)
+
+| Query | QPS | p50 | p95 |
+|---|---|---|---|
+| point lookup | 341.18 | 17.00 ms | 33.00 ms |
+| partition scan | 259.60 | 78.00 ms | 86.00 ms |
+| full count | 393.54 | 12.00 ms | 13.00 ms |
+
+Stress (point lookup, sustained): 1722.12 QPS, 0 failed queries
+## Comparison (concurrency 8)
+
+### Before (master)
+
+### before (2026-09-03 09:03 UTC, `ee3bde5d`)
+
+| Query | QPS | p50 | p95 |
+|---|---|---|---|
+| point lookup | 284.97 | 9.00 ms | 24.00 ms |
+| partition scan | 237.82 | 14.00 ms | 24.00 ms |
+| full count | 317.10 | 7.00 ms | 10.00 ms |
+
+Stress (point lookup, sustained): 821.34 QPS, 0 failed queries
+### After (validation)
+
+### after (2026-09-03 09:03 UTC, `ee3bde5d`)
+
+| Query | QPS | p50 | p95 |
+|---|---|---|---|
+| point lookup | 309.37 | 5.00 ms | 17.00 ms |
+| partition scan | 265.34 | 10.00 ms | 18.00 ms |
+| full count | 395.49 | 2.00 ms | 3.00 ms |
+
+Stress (point lookup, sustained): 1676.60 QPS, 0 failed queries
