@@ -16,6 +16,13 @@ on:
   push:
     branches:
       - adonm/iceberg-warm-perf-validation
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'base/**'
+      - 'contrib/**'
+      - 'cmake/**'
+      - CMakeLists.txt
   workflow_dispatch:
 
 jobs:

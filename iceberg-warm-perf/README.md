@@ -3,7 +3,8 @@
 Harness for the Iceberg/DataLakeCatalog warm-query performance work
 (ClickHouse PRs #115873–#115878). Lives on the fork's validation branch
 `adonm/iceberg-warm-perf-validation`, which merges all six PRs onto current
-master so they can be built, tested, and benchmarked together. Fixes developed
+master so they can be built, tested, and benchmarked together. A green combined
+branch is not evidence that each standalone PR builds or passes. Fixes developed
 here are kept as separate commits and cherry-picked into the individual PRs.
 
 ## Layout
@@ -56,8 +57,8 @@ The query set (see `run_benchmark_rest.sh`) mirrors the PR validation:
 3. full `count()`
 
 Each query is warmed twice (all caches hot, page-fault noise gone), then
-measured with `clickhouse-benchmark` over `BENCH_ITERATIONS` (default 50)
-queries per connection at `BENCH_CONCURRENCY` (default 1). After the
+measured with `clickhouse-benchmark` over `BENCH_ITERATIONS` (default 5000)
+queries **total**, not per connection, at `BENCH_CONCURRENCY` (default 1). After the
 throughput runs, each query is executed once more under a known `query_id`
 and its cache/I/O counters are read back from `system.query_log`
 (`events_query_*.jsonl`), so every cache can be attributed per query. When
@@ -75,7 +76,10 @@ validation branch with the same dataset and settings.
 JdbcCatalog in Postgres (table data on S3-compatible storage) and is compared
 against the REST leg on the same binary and fixture:
 
-- `rest_catalog_server.py` also serves S3-backed catalogs: set `S3_ENDPOINT`,
+- `rest_catalog_server.py` is a Python REST **shim**, not a production catalog
+  benchmark. It loads metadata once through PyIceberg and supports HTTP keep-alive.
+  Results against it must not be generalized to all Iceberg REST implementations.
+  It also serves S3-backed catalogs: set `S3_ENDPOINT`,
   `S3_ACCESS_KEY`, `S3_SECRET_KEY` and a Postgres `CATALOG_URI`, and pass
   `BASE_LOCATION=s3://<bucket>` plus
   `CATALOG_STORAGE_SETTINGS="storage_endpoint='<endpoint>', ..."` to
@@ -84,11 +88,32 @@ against the REST leg on the same binary and fixture:
   `--catalog-uri` writes both the warehouse and the standard
   `iceberg_tables` rows (needs MinIO/Postgres running; create the bucket
   first).
-- CI: `.github/workflows/iceberg-jdbc-bench.yml` (manual
-  `workflow_dispatch`) builds the `adonm/iceberg-jdbc-catalog` branch, runs
-  its stateless test, then benches `rest` vs `jdbc` at concurrencies 8 and
-  64. It lives on this branch so the implementation branch stays
-  upstream-clean.
+- CI: `.github/workflows/iceberg-jdbc-bench.yml` is manually dispatched. It
+  resolves `jdbc_ref` once and records the SHA alongside the binary; downstream
+  tests check out that SHA rather than a moving branch. `test_pattern` selects
+  stateless tests, and `integration_suite` optionally runs upstream integration
+  tests with the same binary. This also validates the standalone cache PRs.
+- Set `run_bench=true` only for JDBC builds. The comparison uses three repetitions,
+  reverses REST/direct order in the middle repetition, and compares actual query
+  results before reporting timings. The dataset manifest records source URLs,
+  SHA-256 hashes, snapshot ID, metadata location, and an expected row count.
+  PostgreSQL and S3 fixture data use disposable tmpfs-backed containers.
+- Source/test changes still trigger combined validation. CI/harness-only changes
+  use manual runs so documentation and workflow fixes do not queue unrelated builds.
+
+## Evidence contract
+
+Record the source SHA, harness SHA, workflow attempt, binary artifact, dataset
+manifest, exact query/settings, query count, and concurrency with each result.
+Use the per-PR build for correctness claims and an isolated before/after change
+for performance attribution. Keep combined-branch results labelled separately.
+
+The initial JDBC experiments used 50 queries total, even at concurrency 64;
+those latency figures are exploratory, not steady-state estimates. Repeated
+results from the longer protocol supersede them. A full `count` may be answered
+from Iceberg metadata and is not a measure of scanning every data row. The
+current ClickHouse REST table-resolution path uses a load-table GET; do not
+describe configuration and listing requests as mandatory on every warm query.
 
 ## Known integration fixes (cherry-pick into PRs)
 

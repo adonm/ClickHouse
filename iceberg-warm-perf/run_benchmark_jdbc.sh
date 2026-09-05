@@ -31,7 +31,8 @@ set -euo pipefail
 BINARY="${1:?usage: run_benchmark_jdbc.sh <clickhouse-binary> [run-name]}"
 RUN_NAME="${2:-latest}"
 CONCURRENCY="${BENCH_CONCURRENCY:-1}"
-ITERATIONS="${BENCH_ITERATIONS:-50}"
+ITERATIONS="${BENCH_ITERATIONS:-5000}"
+PYTHON="${PYTHON:-python3}"
 
 : "${PG_HOST:?set PG_HOST}"
 : "${PG_DATABASE:?set PG_DATABASE}"
@@ -155,9 +156,12 @@ QUERIES=(
 )
 
 echo "warm-up: run each query once so all caches are hot before measuring"
-for q in "${QUERIES[@]}"; do
-    "$BINARY" client --port "$TCP_PORT" --query "$q" >/dev/null
+for i in "${!QUERIES[@]}"; do
+    "$BINARY" client --port "$TCP_PORT" --query "${QUERIES[$i]}" > "$RESULT_DIR/result_query_$((i + 1)).tsv"
 done
+if [ -n "${EXPECTED_ROWS:-}" ]; then
+    test "$(cat "$RESULT_DIR/result_query_3.tsv")" = "$EXPECTED_ROWS"
+fi
 # A second pass removes first-pass page-fault and lazy-init noise.
 for q in "${QUERIES[@]}"; do
     "$BINARY" client --port "$TCP_PORT" --query "$q" >/dev/null
@@ -192,10 +196,11 @@ if [ -n "${STRESS_TIMELIMIT:-}" ]; then
     "$BINARY" benchmark \
         --host 127.0.0.1 --port "$TCP_PORT" \
         --concurrency "${STRESS_CONCURRENCY:-128}" --timelimit "$STRESS_TIMELIMIT" \
-        <<< "${QUERIES[0]}" 2> "$RESULT_DIR/stress.txt" || true
+        <<< "${QUERIES[0]}" 2> "$RESULT_DIR/stress.txt"
     FAILURES="$(grep -c "Code: " "$RESULT_DIR/stress.txt" || true)"
     echo "$FAILURES" > "$RESULT_DIR/stress_failures.txt"
     echo "stress failures: $FAILURES"
+    test "$FAILURES" = 0
 fi
 
 "$BINARY" client --port "$TCP_PORT" --query "SYSTEM FLUSH LOGS" >/dev/null

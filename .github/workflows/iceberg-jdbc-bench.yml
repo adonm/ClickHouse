@@ -1,31 +1,21 @@
 # Fork-only CI for the Iceberg JDBC catalog implementation.
 # Lives on adonm/iceberg-warm-perf-validation (with the other bench harness);
-# builds adonm/iceberg-jdbc-catalog, runs its stateless test, and benchmarks
+# builds an explicit PR ref, runs its selected tests, and optionally benchmarks
 # catalog_type='jdbc' against catalog_type='rest' on the same binary and the
 # same public-dataset fixture (NYC TLC via build_dataset.py into MinIO +
 # standard SqlCatalog rows in Postgres). Not intended for upstream.
 #
-# GitHub-hosted runners are small, so like iceberg-warm-perf-validation.yml
-# this uses a Release build with only the `clickhouse` target on the
-# self-hosted `iceberg-warm-perf` runner. Perf numbers are for comparing the
-# two catalog legs on the same machine, not across machines.
+# Uses the self-hosted `iceberg-warm-perf` runner. The REST comparator is a
+# Python shim, not a production Iceberg REST catalog. Record exact source and
+# harness identities and retain failed runs; do not generalize these timings.
 
-name: Iceberg JDBC catalog bench
+name: Iceberg PR validation and JDBC bench
 
 on:
-  push:
-    branches:
-      - adonm/iceberg-warm-perf-validation
-    paths:
-      - iceberg-warm-perf/run_benchmark_jdbc.sh
-      - iceberg-warm-perf/run_benchmark_rest.sh
-      - iceberg-warm-perf/rest_catalog_server.py
-      - iceberg-warm-perf/build_dataset.py
-      - .github/workflows/iceberg-jdbc-bench.yml
   workflow_dispatch:
     inputs:
       jdbc_ref:
-        description: Ref with the JDBC implementation to build
+        description: Source ref or commit SHA to build
         default: adonm/iceberg-jdbc-catalog
         type: string
       months:
@@ -34,22 +24,36 @@ on:
         type: string
       iterations:
         description: clickhouse-benchmark iterations per query
-        default: '50'
+        default: '5000'
         type: string
+      test_pattern:
+        description: Stateless test selector on the source commit
+        default: '05059_iceberg_jdbc_catalog'
+        type: string
+      integration_suite:
+        description: Optional integration suite on the source commit
+        default: ''
+        type: string
+      run_bench:
+        description: Also run the JDBC versus Python REST shim comparison
+        default: false
+        type: boolean
 
 env:
   PG_HOST: 127.0.0.1
-  PG_PORT: 5432
+  PG_PORT: 15432
   PG_DATABASE: benchci
   PG_SCHEMA: public
   PG_USER: postgres
   PG_PASSWORD: benchpass
   PG_CATALOG: iceberg_warm_perf
-  S3_ENDPOINT: http://127.0.0.1:9000
+  S3_ENDPOINT: http://127.0.0.1:19090
   S3_ACCESS_KEY: minio
   S3_SECRET_KEY: Miniopass123
   S3_BUCKET: benchci
   S3_LOCATION: s3://benchci/nyc_taxi
+  PG_CONTAINER: jdbc-bench-pg-${{ github.run_id }}-${{ github.run_attempt }}
+  S3_CONTAINER: jdbc-bench-s3-${{ github.run_id }}-${{ github.run_attempt }}
 
 jobs:
   build:
@@ -57,6 +61,9 @@ jobs:
     timeout-minutes: 360
     container:
       image: clickhouse/binary-builder:latest
+    outputs:
+      source_sha: ${{ steps.source.outputs.sha }}
+      artifact: ${{ steps.source.outputs.artifact }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -64,18 +71,34 @@ jobs:
           # from the workflow_dispatch input definitions.
           ref: ${{ inputs.jdbc_ref || 'adonm/iceberg-jdbc-catalog' }}
           submodules: recursive
+      - name: Record immutable source identity
+        id: source
+        run: |
+          SHA=$(git rev-parse HEAD)
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "artifact=clickhouse-$SHA-${{ github.run_attempt }}" >> "$GITHUB_OUTPUT"
+          mkdir -p build/programs
+          printf '%s\n' "$SHA" > build/programs/source.sha
       - name: Configure
         run: |
-          mkdir -p build && cd build
-          cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=OFF
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_TESTS=OFF > build/configure.log 2>&1
       - name: Build clickhouse
-        run: cd build && ninja clickhouse
+        run: ninja -C build clickhouse > build/build.log 2>&1
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: clickhouse-jdbc-binary
-          path: build/programs/clickhouse
+          name: ${{ steps.source.outputs.artifact }}
+          path: |
+            build/programs/clickhouse
+            build/programs/source.sha
           retention-days: 3
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-build-logs-${{ github.run_attempt }}
+          path: build/*.log
+          retention-days: 14
 
   stateless:
     needs: build
@@ -85,21 +108,25 @@ jobs:
       TZ: Etc/UTC
       CLICKHOUSE_PORT_TCP: 19003
       CLICKHOUSE_PORT_HTTP: 18126
+      CLICKHOUSE_USER_FILES: ${{ github.workspace }}/tmp/clickhouse_test_server/user_files
+      SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
+      TEST_PATTERN: ${{ inputs.test_pattern }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.jdbc_ref || 'adonm/iceberg-jdbc-catalog' }}
+          ref: ${{ needs.build.outputs.source_sha }}
       - name: Download binary
         uses: actions/download-artifact@v4
         with:
-          name: clickhouse-jdbc-binary
+          name: ${{ needs.build.outputs.artifact }}
           path: build/programs
       - name: Run JDBC stateless test
         run: |
           chmod +x build/programs/clickhouse
+          test "$(cat build/programs/source.sha)" = "$SOURCE_SHA"
           # clickhouse-test needs a running server; start a throwaway one.
           rm -rf tmp/clickhouse_test_server
-          mkdir -p tmp/clickhouse_test_server
+          mkdir -p "$CLICKHOUSE_USER_FILES"
           cat > tmp/clickhouse_test_server-config.xml <<EOF
           <clickhouse>
               <logger><level>warning</level><console>1</console></logger>
@@ -108,29 +135,75 @@ jobs:
               <listen_host>127.0.0.1</listen_host>
               <path>tmp/clickhouse_test_server/</path>
               <tmp_path>tmp/clickhouse_test_server/tmp/</tmp_path>
-              <user_files_path>tmp/clickhouse_test_server/</user_files_path>
+              <user_files_path>${CLICKHOUSE_USER_FILES}</user_files_path>
+              <query_log><database>system</database><table>query_log</table></query_log>
               <users><default><password></password><networks><ip>::/0</ip></networks><profile>default</profile><quota>default</quota></default></users>
               <profiles><default></default></profiles>
               <quotas><default></default></quotas>
           </clickhouse>
           EOF
           build/programs/clickhouse server --config-file tmp/clickhouse_test_server-config.xml > tmp/clickhouse_test_server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID"; wait "$SERVER_PID"' EXIT
           for _ in $(seq 1 120); do
             build/programs/clickhouse client --port "$CLICKHOUSE_PORT_TCP" -q "SELECT 1" >/dev/null 2>&1 && break
             sleep 1
           done
           build/programs/clickhouse client --port "$CLICKHOUSE_PORT_TCP" -q "SELECT 1" >/dev/null
           cd tests
-          ./clickhouse-test --binary ../build/programs/clickhouse 05059_iceberg_jdbc_catalog
+          ./clickhouse-test --binary ../build/programs/clickhouse "$TEST_PATTERN" > ../build/test_stateless.log 2>&1
+      - name: Upload stateless logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-stateless-logs-${{ github.run_attempt }}
+          path: |
+            build/test_stateless.log
+            tmp/clickhouse_test_server.log
+          retention-days: 14
+
+  integration:
+    needs: build
+    if: inputs.integration_suite != ''
+    runs-on: iceberg-warm-perf
+    timeout-minutes: 120
+    env:
+      SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
+      INTEGRATION_SUITE: ${{ inputs.integration_suite }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.source_sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: build/programs
+      - name: Run integration suite against built source
+        run: |
+          test "$(cat build/programs/source.sha)" = "$SOURCE_SHA"
+          chmod +x build/programs/clickhouse
+          python3 -m ci.praktika run integration --test "$INTEGRATION_SUITE" --path "$PWD/build/programs/clickhouse" --workers 1 > build/test_integration.log 2>&1
+      - name: Upload integration logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-integration-logs-${{ github.run_attempt }}
+          path: |
+            build/test_integration.log
+            ci/tmp/pytest_parallel.jsonl
+          retention-days: 14
 
   bench:
-    needs: build
+    needs: [build, stateless, integration]
+    if: always() && inputs.run_bench && needs.build.result == 'success' && needs.stateless.result == 'success' && (needs.integration.result == 'success' || needs.integration.result == 'skipped')
     runs-on: iceberg-warm-perf
     timeout-minutes: 180
     env:
       TZ: Etc/UTC
       PYTHON: python3
-      BENCH_ITERATIONS: ${{ inputs.iterations || '50' }}
+      BENCH_ITERATIONS: ${{ inputs.iterations || '5000' }}
+      MONTHS: ${{ inputs.months }}
+      SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
       STRESS_TIMELIMIT: 60
       STRESS_CONCURRENCY: 128
     steps:
@@ -138,53 +211,48 @@ jobs:
       - name: Download JDBC binary
         uses: actions/download-artifact@v4
         with:
-          name: clickhouse-jdbc-binary
+          name: ${{ needs.build.outputs.artifact }}
           path: build/programs
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - name: Install dataset tooling
-        run: pip install "pyiceberg[s3fs]" pyarrow sqlalchemy "psycopg[binary]"
+        run: pip install "pyiceberg[s3fs]==0.11.1" pyarrow sqlalchemy "psycopg[binary]"
       - name: Start Postgres and MinIO
         run: |
-          docker rm -f jdbc-bench-pg jdbc-bench-minio 2>/dev/null || true
-          docker run -d --name jdbc-bench-pg -p "${PG_PORT}:5432" \
+          docker run -d --name "$PG_CONTAINER" -p "127.0.0.1:${PG_PORT}:5432" --tmpfs /var/lib/postgresql/data:rw,size=512m \
             -e POSTGRES_USER="${PG_USER}" -e POSTGRES_PASSWORD="${PG_PASSWORD}" \
             -e POSTGRES_DB="${PG_DATABASE}" postgres:17
-          docker run -d --name jdbc-bench-minio -p "9000:9000" \
+          docker run -d --name "$S3_CONTAINER" -p "127.0.0.1:19090:9000" --tmpfs /data:rw,size=2g \
             -e MINIO_ROOT_USER="${S3_ACCESS_KEY}" -e MINIO_ROOT_PASSWORD="${S3_SECRET_KEY}" \
             minio/minio:latest server /data
           for _ in $(seq 1 60); do
-            docker exec jdbc-bench-pg pg_isready -U "${PG_USER}" >/dev/null 2>&1 \
-              && curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null 2>&1 && break
+            docker exec "$PG_CONTAINER" pg_isready -U "${PG_USER}" >/dev/null 2>&1 \
+              && curl -fsS "$S3_ENDPOINT/minio/health/live" >/dev/null 2>&1 && break
             sleep 2
           done
-          docker exec jdbc-bench-pg pg_isready -U "${PG_USER}"
-          curl -fsS http://127.0.0.1:9000/minio/health/live
-      - name: Build fixture dataset (if missing)
+          docker exec "$PG_CONTAINER" pg_isready -U "${PG_USER}"
+          curl -fsS "$S3_ENDPOINT/minio/health/live"
+      - name: Build fresh fixture and record provenance
         run: |
-          # The runner workspace persists between runs; the MinIO container
-          # does not, so re-upload when the bucket is empty.
-          EMPTY="$(python3 -c "
+          python3 - <<'PY'
+          import os
           import s3fs
-          fs = s3fs.S3FileSystem(endpoint_url='${S3_ENDPOINT}', key='${S3_ACCESS_KEY}', secret='${S3_SECRET_KEY}')
-          if not fs.exists('s3://${S3_BUCKET}'):
-              fs.mkdir('s3://${S3_BUCKET}')
-          print('yes' if len(fs.glob('s3://${S3_BUCKET}/nyc_taxi/nyc/taxis/metadata/*')) == 0 else 'no')
-          ")"
-          if [ "$EMPTY" = "yes" ]; then
-            python3 iceberg-warm-perf/build_dataset.py \
+          fs = s3fs.S3FileSystem(endpoint_url=os.environ['S3_ENDPOINT'], key=os.environ['S3_ACCESS_KEY'], secret=os.environ['S3_SECRET_KEY'])
+          fs.mkdir('s3://' + os.environ['S3_BUCKET'])
+          PY
+          python3 iceberg-warm-perf/build_dataset.py \
               --location "${S3_LOCATION}" \
               --catalog-uri "postgresql+psycopg://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}" \
               --endpoint "${S3_ENDPOINT}" --access-key "${S3_ACCESS_KEY}" --secret-key "${S3_SECRET_KEY}" \
-              --months "${{ inputs.months || '2025-01' }}" \
-              --download-dir "${{ github.workspace }}/tmp/iceberg_dataset/downloads"
-          else
-            echo "reusing existing S3 fixture"
-          fi
+              --months "$MONTHS" \
+              --download-dir "${{ github.workspace }}/tmp/iceberg_dataset/downloads" \
+              --manifest "$PWD/build/dataset.json"
           chmod +x build/programs/clickhouse
+          test "$(cat build/programs/source.sha)" = "$SOURCE_SHA"
       - name: Run rest-vs-jdbc comparison
         run: |
+          export EXPECTED_ROWS=$(python3 -c "import json; print(json.load(open('build/dataset.json'))['rows'])")
           export CATALOG_URI="postgresql+psycopg://${PG_USER}:${PG_PASSWORD}@${PG_HOST}:${PG_PORT}/${PG_DATABASE}"
           export WAREHOUSE="${S3_LOCATION}"
           export BASE_LOCATION="s3://${S3_BUCKET}"
@@ -194,16 +262,24 @@ jobs:
           export CATALOG_STORAGE_SETTINGS="storage_endpoint='${S3_ENDPOINT}', aws_access_key_id='${S3_ACCESS_KEY}', aws_secret_access_key='${S3_SECRET_KEY}'"
           export REST_WAREHOUSE="${PG_CATALOG}"
           TABLE_LOCATION="${S3_LOCATION}/nyc/taxis"
-          for C in 8 64; do
-            echo "===== concurrency $C ====="
-            BENCH_CONCURRENCY=$C iceberg-warm-perf/run_benchmark_rest.sh \
-              build/programs/clickhouse "$CATALOG_URI" "$TABLE_LOCATION" "jdbc-rest-$C"
-            BENCH_CONCURRENCY=$C iceberg-warm-perf/run_benchmark_jdbc.sh \
-              build/programs/clickhouse "jdbc-direct-$C"
-            python3 iceberg-warm-perf/report.py --compare \
-              "tmp/iceberg_warm_perf_results/jdbc-rest-$C" "tmp/iceberg_warm_perf_results/jdbc-direct-$C"
+          for R in 1 2 3; do
+            if [ "$R" = 3 ]; then export STRESS_TIMELIMIT=60; else unset STRESS_TIMELIMIT; fi
+            ORDER="rest direct"
+            if [ "$R" = 2 ]; then ORDER="direct rest"; fi
+            for C in 8 64; do
+              for LEG in $ORDER; do
+                if [ "$LEG" = rest ]; then
+                  BENCH_CONCURRENCY=$C iceberg-warm-perf/run_benchmark_rest.sh build/programs/clickhouse "$CATALOG_URI" "$TABLE_LOCATION" "jdbc-rest-$C-r$R" > "build/test_bench_rest_${C}_${R}.log" 2>&1
+                else
+                  BENCH_CONCURRENCY=$C iceberg-warm-perf/run_benchmark_jdbc.sh build/programs/clickhouse "jdbc-direct-$C-r$R" > "build/test_bench_direct_${C}_${R}.log" 2>&1
+                fi
+              done
+              for Q in 1 2 3; do
+                cmp "tmp/iceberg_warm_perf_results/jdbc-rest-$C-r$R/result_query_$Q.tsv" "tmp/iceberg_warm_perf_results/jdbc-direct-$C-r$R/result_query_$Q.tsv"
+              done
+              python3 iceberg-warm-perf/report.py --compare "tmp/iceberg_warm_perf_results/jdbc-rest-$C-r$R" "tmp/iceberg_warm_perf_results/jdbc-direct-$C-r$R" > "build/comparison_${C}_${R}.md"
+            done
           done
-          python3 iceberg-warm-perf/update_results.py --all tmp/iceberg_warm_perf_results
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
@@ -213,8 +289,11 @@ jobs:
             tmp/iceberg_warm_perf_results
             tmp/iceberg_warm_perf_rest_server.log
             tmp/iceberg_warm_perf_jdbc_server.log
-            iceberg-warm-perf/RESULTS.md
+            build/test_bench_*.log
+            build/comparison_*.md
+            build/dataset.json
+            build/programs/source.sha
           retention-days: 14
       - name: Stop services
         if: always()
-        run: docker rm -f jdbc-bench-pg jdbc-bench-minio 2>/dev/null || true
+        run: docker rm -f "$PG_CONTAINER" "$S3_CONTAINER"

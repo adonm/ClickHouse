@@ -19,7 +19,7 @@ LOCATION="${3:?usage: run_benchmark_rest.sh <clickhouse-binary> <catalog-uri> <t
 RUN_NAME="${4:-latest}"
 PYTHON="${PYTHON:-python3}"
 CONCURRENCY="${BENCH_CONCURRENCY:-1}"
-ITERATIONS="${BENCH_ITERATIONS:-50}"
+ITERATIONS="${BENCH_ITERATIONS:-5000}"
 
 BINARY="$(realpath "$BINARY")"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -46,7 +46,7 @@ else
     USER_FILES="$(dirname "$(realpath "$LOCATION")")"
 fi
 
-WAREHOUSE="$(dirname "$USER_FILES")"
+WAREHOUSE="${WAREHOUSE:-$(dirname "$USER_FILES")}"
 export CATALOG_URI
 export WAREHOUSE
 export PATH_REWRITE_SRC="${PATH_REWRITE_SRC:-}"
@@ -134,9 +134,12 @@ QUERIES=(
 )
 
 echo "warm-up: run each query once so all caches are hot before measuring"
-for q in "${QUERIES[@]}"; do
-    "$BINARY" client --port "$TCP_PORT" --query "$q" >/dev/null
+for i in "${!QUERIES[@]}"; do
+    "$BINARY" client --port "$TCP_PORT" --query "${QUERIES[$i]}" > "$RESULT_DIR/result_query_$((i + 1)).tsv"
 done
+if [ -n "${EXPECTED_ROWS:-}" ]; then
+    test "$(cat "$RESULT_DIR/result_query_3.tsv")" = "$EXPECTED_ROWS"
+fi
 # A second pass removes first-pass page-fault and lazy-init noise.
 for q in "${QUERIES[@]}"; do
     "$BINARY" client --port "$TCP_PORT" --query "$q" >/dev/null
@@ -166,17 +169,17 @@ for i in "${!QUERIES[@]}"; do
 done
 
 # Optional saturation stress: fixed-duration run at high concurrency.
-# Failed queries are a first-class metric here (master can time out on the
-# per-query catalog traffic), so the run never aborts the job.
+# Failed queries fail the run; keep its output for diagnosis.
 if [ -n "${STRESS_TIMELIMIT:-}" ]; then
     echo "stress: ${STRESS_CONCURRENCY:-128} connections for ${STRESS_TIMELIMIT}s (point lookup)"
     "$BINARY" benchmark \
         --host 127.0.0.1 --port "$TCP_PORT" \
         --concurrency "${STRESS_CONCURRENCY:-128}" --timelimit "$STRESS_TIMELIMIT" \
-        <<< "${QUERIES[0]}" 2> "$RESULT_DIR/stress.txt" || true
+        <<< "${QUERIES[0]}" 2> "$RESULT_DIR/stress.txt"
     FAILURES="$(grep -c "Code: " "$RESULT_DIR/stress.txt" || true)"
     echo "$FAILURES" > "$RESULT_DIR/stress_failures.txt"
     echo "stress failures: $FAILURES"
+    test "$FAILURES" = 0
 fi
 
 "$BINARY" client --port "$TCP_PORT" --query "SYSTEM FLUSH LOGS" >/dev/null
