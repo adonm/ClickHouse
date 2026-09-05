@@ -137,6 +137,16 @@ jobs:
               <tmp_path>tmp/clickhouse_test_server/tmp/</tmp_path>
               <user_files_path>${CLICKHOUSE_USER_FILES}</user_files_path>
               <query_log><database>system</database><table>query_log</table></query_log>
+              <remote_servers>
+                  <parallel_replicas>
+                      <shard>
+                          <replica>
+                              <host>localhost</host>
+                              <port>${CLICKHOUSE_PORT_TCP}</port>
+                          </replica>
+                      </shard>
+                  </parallel_replicas>
+              </remote_servers>
               <users><default><password></password><networks><ip>::/0</ip></networks><profile>default</profile><quota>default</quota></default></users>
               <profiles><default></default></profiles>
               <quotas><default></default></quotas>
@@ -178,19 +188,24 @@ jobs:
         with:
           name: ${{ needs.build.outputs.artifact }}
           path: build/programs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install integration tooling
+        run: pip install pytest "pytest-xdist==2.4.0" docker psycopg2-binary "pyiceberg[s3fs]==0.11.1" sqlalchemy pyarrow minio boto3 pandas
       - name: Run integration suite against built source
         run: |
           test "$(cat build/programs/source.sha)" = "$SOURCE_SHA"
           chmod +x build/programs/clickhouse
-          python3 -m ci.praktika run integration --test "$INTEGRATION_SUITE" --path "$PWD/build/programs/clickhouse" --workers 1 > build/test_integration.log 2>&1
+          BIN="$PWD/build/programs/clickhouse"
+          cd tests/integration
+          CLICKHOUSE_TESTS_SERVER_BIN_PATH="$BIN" python3 -m pytest "$INTEGRATION_SUITE" -n1 --dist=loadfile -q > ../../build/test_integration.log 2>&1
       - name: Upload integration logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: source-integration-logs-${{ github.run_attempt }}
-          path: |
-            build/test_integration.log
-            ci/tmp/pytest_parallel.jsonl
+          path: build/test_integration.log
           retention-days: 14
 
   bench:
