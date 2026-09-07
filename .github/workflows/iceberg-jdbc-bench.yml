@@ -190,15 +190,18 @@ jobs:
           path: build/programs
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.13'
       - name: Install integration tooling
-        run: pip install --upgrade pytest pytest-xdist docker psycopg2-binary "pyiceberg[s3fs]==0.11.1" sqlalchemy pyarrow minio boto3 pandas numpy requests dict2xml filelock kazoo
+        # Same pinned environment as upstream CI's integration image
+        # (ci/docker/integration/runner/requirements.txt): hand-rolled
+        # package lists rotted within days (missing modules, stale pins).
+        run: pip install --upgrade -r ci/docker/integration/runner/requirements.txt
       - name: Preflight environment and suite syntax
         run: |
           # Fail fast here, not after the 1h build: assert the interpreter,
           # hard imports and suite files before docker/pytest spin up.
           python3 -c "import sys; assert sys.version_info >= (3, 12), sys.version"
-          python3 -c "import docker, filelock, kazoo, minio, requests, numpy, pandas, psycopg2, sqlalchemy, pyiceberg"
+          python3 -c "import docker, filelock, kazoo, minio, requests, numpy, pandas, psycopg2, sqlalchemy, pyiceberg, avro"
           SUITE_DIR="$(printf '%s' "$INTEGRATION_SUITE" | cut -d: -f1 | cut -d/ -f1)"
           python3 -m compileall -q "tests/integration/$SUITE_DIR" tests/integration/conftest.py tests/integration/helpers/cluster.py
           docker info >/dev/null
