@@ -22,13 +22,18 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import hashlib
+import importlib.metadata
+import json
 import os
+import re
 import urllib.request
 from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 from pyiceberg.catalog import load_catalog
+from pyiceberg.exceptions import NoSuchTableError
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
 from pyiceberg.table.sorting import NullOrder, SortDirection, SortField, SortOrder
@@ -111,12 +116,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--access-key", default=None)
     parser.add_argument("--secret-key", default=None)
     parser.add_argument("--endpoint", default=None)
+    parser.add_argument("--manifest", default=None, help="Write dataset provenance and expected row count as JSON")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     months = [m.strip() for m in args.months.split(",") if m.strip()]
+    if not months or any(not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month) for month in months):
+        raise ValueError("--months must contain at least one YYYY-MM month")
 
     download_dir = Path(args.download_dir or f"{os.getcwd()}/tmp/iceberg_dataset/downloads")
     catalog_uri = args.catalog_uri or f"sqlite:///{download_dir}/catalog.db"
@@ -136,7 +144,7 @@ def main() -> None:
     try:
         table = catalog.load_table("nyc.taxis")
         print(f"table nyc.taxis already exists ({table.current_snapshot()})")
-    except Exception:
+    except NoSuchTableError:
         partition_spec = PartitionSpec(
             PartitionField(source_id=2, field_id=1000, transform=DayTransform(), name="tpep_pickup_datetime_day")
         )
@@ -156,13 +164,23 @@ def main() -> None:
         )
         print(f"created table nyc.taxis at {args.location}")
 
+    sources = []
     for month in months:
         source = download_month(month, download_dir)
+        sources.append({"url": SOURCE_URL.format(month=month), "sha256": hashlib.sha256(source.read_bytes()).hexdigest()})
         data = read_month(source)
         print(f"appending {month}: {data.num_rows} rows")
         table.append(data)
 
     print(f"done: {table.current_snapshot()}")
+    if args.manifest:
+        Path(args.manifest).write_text(json.dumps({
+            "versions": {name: importlib.metadata.version(name) for name in ("pyiceberg", "pyarrow", "sqlalchemy")},
+            "sources": sources,
+            "rows": table.scan().count(),
+            "metadata_location": table.metadata_location,
+            "snapshot_id": table.current_snapshot().snapshot_id,
+        }, indent=2) + "\n")
 
 
 if __name__ == "__main__":
