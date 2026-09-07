@@ -205,6 +205,15 @@ jobs:
           SUITE_DIR="$(printf '%s' "$INTEGRATION_SUITE" | cut -d: -f1 | cut -d/ -f1)"
           python3 -m compileall -q "tests/integration/$SUITE_DIR" tests/integration/conftest.py tests/integration/helpers/cluster.py
           docker info >/dev/null
+      - name: Clean stale test containers
+        run: |
+          # Failed runs leave compose containers behind; the next run's
+          # fixed service names (postgres1, minio1) then collide and the
+          # harness burns its whole wait budget. The runner is serial, so
+          # anything matching our prefixes is garbage from a dead run.
+          docker ps -aq --filter "name=jdbc-bench-" | xargs -r docker rm -f
+          docker ps -aq --filter "name=roottest" | xargs -r docker rm -f
+          docker ps --format '{{.Names}}' | head -5
       - name: Run integration suite against built source
         run: |
           test "$(cat build/programs/source.sha)" = "$SOURCE_SHA"
