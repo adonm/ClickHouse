@@ -214,6 +214,26 @@ jobs:
           docker ps -aq --filter "name=jdbc-bench-" | xargs -r docker rm -f
           docker ps -aq --filter "name=roottest" | xargs -r docker rm -f
           docker ps --format '{{.Names}}' | head -5
+      - name: Diagnose container networking
+        run: |
+          # Compose services get container IPs the test process dials
+          # directly; bench-style published ports already work on this box.
+          # This probe tells a sick container apart from broken
+          # host-to-bridge routing before pytest burns its wait budget.
+          docker run -d --name netprobe-postgres -e POSTGRES_PASSWORD=x postgres:17
+          sleep 5
+          IP="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' netprobe-postgres)"
+          echo "container IP: $IP"
+          docker exec netprobe-postgres pg_isready -U postgres || true
+          python3 - "$IP" <<'PY'
+          import socket, sys
+          ip = sys.argv[1]
+          s = socket.create_connection((ip, 5432), timeout=10)
+          print("TCP connect to container IP: OK")
+          s.close()
+          PY
+          ip route show | head -10 || true
+          docker rm -f netprobe-postgres
       - name: Run integration suite against built source
         run: |
           test "$(cat build/programs/source.sha)" = "$SOURCE_SHA"
