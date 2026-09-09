@@ -255,7 +255,11 @@ jobs:
 
   bench:
     needs: [build, stateless, integration]
-    if: always() && inputs.run_bench && needs.build.result == 'success' && needs.stateless.result == 'success' && (needs.integration.result == 'success' || needs.integration.result == 'skipped')
+    # Bench measures performance; correctness is tracked by the test jobs
+    # themselves. In particular the integration job cannot pass while the
+    # runner's host-to-bridge networking is broken (see the probe step), so
+    # a red integration job must not gate the bench legs.
+    if: always() && inputs.run_bench && needs.build.result == 'success' && needs.stateless.result == 'success'
     runs-on: iceberg-warm-perf
     timeout-minutes: 180
     env:
