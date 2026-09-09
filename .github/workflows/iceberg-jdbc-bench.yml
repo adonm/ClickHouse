@@ -282,8 +282,8 @@ jobs:
           python-version: '3.12'
       - name: Install dataset tooling
         run: |
-          pip install --upgrade "pyiceberg[s3fs]==0.11.1" pyarrow sqlalchemy "psycopg[binary]"
-          python3 -c "import pyiceberg, pyarrow, sqlalchemy, psycopg, s3fs"
+          pip install --upgrade "pyiceberg[s3fs,pyiceberg-core]==0.11.1" pyarrow sqlalchemy "psycopg[binary]"
+          python3 -c "import pyiceberg, pyarrow, sqlalchemy, psycopg, s3fs, pyiceberg_core"
       - name: Start Postgres and MinIO
         run: |
           docker run -d --name "$PG_CONTAINER" -p "127.0.0.1:${PG_PORT}:5432" --tmpfs /var/lib/postgresql/data:rw,size=512m \
